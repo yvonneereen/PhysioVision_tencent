@@ -1,5 +1,6 @@
-import { EXERCISES, EXERCISE_MAP } from "../exercises/registry.js?v=61";
+import { EXERCISES, EXERCISE_MAP } from "../exercises/registry.js?v=62";
 import { applyCalibration } from "../personalization.js";
+import { isClinicalRuleScoreable } from "../movement-quality.js?v=4";
 
 export { EXERCISES };
 
@@ -390,6 +391,9 @@ export class FeedbackEngine {
         );
       }
       const condition = phase[config.measurement];
+      if (this.exercise.activeCalibration && condition) {
+        return _conditionMatches(measurement.value, condition);
+      }
       return condition
         ? _conditionCloseness(measurement.value, condition)
           >= (this.exercise.matchThreshold ?? 1)
@@ -399,7 +403,9 @@ export class FeedbackEngine {
     if (phase.name !== config.targetPhase || !Number.isFinite(baseline)) {
       return null;
     }
-    const targetRange = config.targetRange ?? phase[config.measurement];
+    const targetRange = this.exercise.activeCalibration
+      ? phase[config.measurement]
+      : config.targetRange ?? phase[config.measurement];
     return baseline - measurement.value >= (config.minimumChange ?? 0)
       && _conditionMatches(measurement.value, targetRange);
   }
@@ -538,7 +544,12 @@ export class FeedbackEngine {
       );
     }
     if (nextName !== config.targetPhase) return null;
-    const targetRange = config.targetRange;
+    const targetPhase = this.exercise.phases.find(
+      (phase) => phase.name === config.targetPhase,
+    );
+    const targetRange = this.exercise.activeCalibration
+      ? targetPhase?.[config.measurement]
+      : config.targetRange ?? targetPhase?.[config.measurement];
     const rangeChange = Array.isArray(targetRange)
       ? Math.max(0, baseline - targetRange[1])
       : 0;
@@ -557,11 +568,47 @@ export class FeedbackEngine {
           : configuredCue;
         const message = String(cue?.message ?? "").trim();
         if (!message || details.some((item) => item.message === message)) return;
+        const ruleId = String(
+          cue.ruleId ?? `${this.exercise.id}:${condition}`,
+        );
+        const ruleCard = {
+          clinicalClaim:
+            "Prototype camera observation; clinical importance has not been established.",
+          intendedPopulation:
+            "Not established for this prototype.",
+          measuredSignal: condition,
+          cameraView: this.exercise.camera ?? "unspecified",
+          thresholdSource: "engineering_seed",
+          feedback: message,
+          unableToAssessConditions: [
+            "Required landmark missing",
+            "Low landmark confidence",
+            "Wrong or unsupported camera view",
+          ],
+          contraindicationsContext:
+            "Follow the individual's clinician-defined restrictions and stop rules.",
+          validationStatus: "unvalidated",
+          technicalValidationStatus: "unvalidated",
+          clinicianApproval: {
+            approved: false,
+            approvedBy: "",
+            approvedAt: "",
+            version: "",
+          },
+          ...(cue.ruleCard ?? {}),
+        };
+        // Validate only the explicitly configured card. The descriptive
+        // prototype defaults above make observations auditable, but must never
+        // fill missing clinical evidence on behalf of a scoring rule.
+        const scoringEligible = isClinicalRuleScoreable(cue);
         details.push({
-          id: message,
+          id: ruleId,
+          ruleId,
           condition,
           message,
           qualityReliable: cue?.qualityReliable !== false,
+          scoringEligible,
+          ruleCard,
         });
       });
     return details.slice(0, this.exercise.maxCues ?? details.length);

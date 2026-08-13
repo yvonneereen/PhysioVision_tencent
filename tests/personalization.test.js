@@ -121,7 +121,7 @@ const targetCaptures = [
     },
   });
   const tamperedSquat = tampered.phases.find((phase) => phase.name === "squat");
-  assert.deepEqual(tamperedSquat.knee, [90, 155]);
+  assert.deepEqual(tamperedSquat.knee, [45, 165]);
   assert.deepEqual(tamperedSquat.hip, [90, 135]);
 }
 
@@ -176,14 +176,14 @@ const targetCaptures = [
 }
 
 {
-  const unsafeDepth = frames({
-    knee: 85,
+  const implausibleCapture = frames({
+    knee: 35,
     hip: 135,
   });
 
   assert.throws(
-    () => validateCalibrationCapture(halfSquat, unsafeDepth, "target"),
-    /comfortable half-squat/
+    () => validateCalibrationCapture(halfSquat, implausibleCapture, "target"),
+    /prescribed or approved/
   );
 }
 

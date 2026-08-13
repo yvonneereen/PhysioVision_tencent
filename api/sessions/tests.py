@@ -6,7 +6,7 @@ from api.catalogue.models import Calibration, Exercise
 from api.core.models import PatientProfile, User, UserRole
 
 from .models import Session
-from .serializers import PainCheckinSerializer
+from .serializers import PainCheckinSerializer, SessionSerializer
 
 
 class PainCheckinSerializerTests(SimpleTestCase):
@@ -32,6 +32,61 @@ class PainCheckinSerializerTests(SimpleTestCase):
         self.assertIn("pain_level", serializer.errors)
         self.assertIn("timing", serializer.errors)
         self.assertIn("recovery_status", serializer.errors)
+
+
+class SessionAssessmentSerializerTests(SimpleTestCase):
+    def prototype_assessment(self):
+        return {
+            "version": 1,
+            "tracking_validity": {"status": "partially_assessable"},
+            "prescription_completion": {"status": "complete"},
+            "movement_execution": {
+                "status": "not_clinically_scored",
+                "score": None,
+            },
+            "symptoms_and_safety": {
+                "status": "not_reported_during_movement",
+                "source": "patient_report",
+                "camera_inference_used": False,
+            },
+        }
+
+    def test_accepts_separate_unscored_assessment_outputs(self):
+        serializer = SessionSerializer(
+            data={"assessment_summary": self.prototype_assessment()},
+            partial=True,
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
+    def test_rejects_client_claim_of_unapproved_clinical_score(self):
+        assessment = self.prototype_assessment()
+        assessment["movement_execution"] = {
+            "status": "assessed",
+            "score": 85,
+            "rule_versions": ["client-claimed-rule"],
+        }
+        serializer = SessionSerializer(
+            data={
+                "assessment_summary": assessment,
+                "quality_score": 85,
+            },
+            partial=True,
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("assessment_summary", serializer.errors)
+
+    def test_rejects_camera_inferred_symptoms(self):
+        assessment = self.prototype_assessment()
+        assessment["symptoms_and_safety"]["camera_inference_used"] = True
+        serializer = SessionSerializer(
+            data={"assessment_summary": assessment},
+            partial=True,
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("assessment_summary", serializer.errors)
 
 
 class PatientDataIsolationTests(APITestCase):

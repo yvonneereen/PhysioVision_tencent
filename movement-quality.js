@@ -1,7 +1,18 @@
-const COACHING_SCORING_VERSION = 2;
+const COACHING_SCORING_VERSION = 3;
 const DEFAULT_GRACE_REPETITIONS = 2;
 const DEFAULT_DEDUCTION = 5;
 const DEFAULT_MAX_DEDUCTION = 30;
+
+const REQUIRED_RULE_CARD_FIELDS = Object.freeze([
+  "clinicalClaim",
+  "intendedPopulation",
+  "measuredSignal",
+  "cameraView",
+  "thresholdSource",
+  "feedback",
+  "unableToAssessConditions",
+  "contraindicationsContext",
+]);
 
 function nonNegativeNumber(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -9,24 +20,42 @@ function nonNegativeNumber(value) {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
-function boundedCorrectionCount(value, repetitions) {
-  const count = nonNegativeNumber(value) ?? 0;
-  return Math.min(repetitions, Math.round(count));
-}
-
 function normalizedCue(cue) {
   const text = String(cue?.message ?? cue?.cue_text ?? cue ?? "").trim();
   if (!text) return null;
+  const ruleCard = cue?.ruleCard ?? null;
   return {
-    id: String(cue?.id ?? text),
+    id: String(cue?.ruleId ?? cue?.id ?? text),
     text,
     reliable: cue?.qualityReliable !== false && cue?.reliable !== false,
+    scoreable: isClinicalRuleScoreable(cue),
+    condition: String(cue?.condition ?? ""),
+    ruleCard,
+    ruleVersion: String(ruleCard?.clinicianApproval?.version ?? ""),
   };
 }
 
-function coachingRecords(cuesTriggered = []) {
+function coachingRecords(cuesTriggered = [], version = COACHING_SCORING_VERSION) {
   return (Array.isArray(cuesTriggered) ? cuesTriggered : []).filter(
-    (cue) => Number(cue?.scoring_version) === COACHING_SCORING_VERSION,
+    (cue) => Number(cue?.scoring_version) === version,
+  );
+}
+
+export function isClinicalRuleScoreable(cue = {}) {
+  const card = cue.ruleCard ?? {};
+  const hasCompleteCard = REQUIRED_RULE_CARD_FIELDS.every((field) => {
+    const value = card[field];
+    return Array.isArray(value) ? value.length > 0 : Boolean(String(value ?? "").trim());
+  });
+  return Boolean(
+    cue.scoringEligible === true
+    && hasCompleteCard
+    && card.validationStatus === "clinically_validated"
+    && card.technicalValidationStatus === "validated"
+    && card.clinicianApproval?.approved === true
+    && card.clinicianApproval?.approvedBy
+    && card.clinicianApproval?.approvedAt
+    && card.clinicianApproval?.version
   );
 }
 
@@ -54,9 +83,21 @@ export class CoachingQualitySession {
     this.pending = null;
     this.active = null;
     this.records = [];
+    this.observations = new Map();
     this.assessedCueIds = new Set();
     this.nextReminderId = 1;
     this.activeObservationCandidate = null;
+    if (!Array.isArray(this.ruleInventory)) this.ruleInventory = [];
+  }
+
+  configureRules(cues = {}) {
+    this.ruleInventory = Object.entries(cues ?? {}).map(
+      ([condition, configuredCue]) => normalizedCue(
+        typeof configuredCue === "string"
+          ? { id: condition, condition, message: configuredCue }
+          : { ...configuredCue, id: configuredCue.id ?? condition, condition },
+      ),
+    ).filter(Boolean);
   }
 
   observe({ cue = null, timestampMs = Date.now(), repetitionNumber = 1 } = {}) {
@@ -67,6 +108,22 @@ export class CoachingQualitySession {
     const issue = normalizedCue(cue);
 
     this._assessActiveIfWindowComplete(repetition);
+
+    // Prototype observations remain visible and auditable, but cannot enter
+    // the reminder/deduction path until their rule card passes the explicit
+    // technical, clinical, and clinician-approval gate.
+    if (issue && !issue.scoreable) {
+      this._recordUnscoredObservation(issue, repetition);
+      this.candidate = null;
+      this.activeObservationCandidate = null;
+      return {
+        handled: true,
+        stable: true,
+        adjusting: false,
+        observationOnly: true,
+        reminder: null,
+      };
+    }
 
     if (this.active && repetition > this.active.reminder_rep) {
       if (issue?.reliable && issue.id === this.active.cue_id) {
@@ -124,6 +181,10 @@ export class CoachingQualitySession {
       this.candidate = {
         cue_id: issue.id,
         cue_text: issue.text,
+        rule_version: issue.ruleVersion,
+        condition: issue.condition,
+        measured_signal: issue.ruleCard?.measuredSignal ?? "",
+        threshold_source: issue.ruleCard?.thresholdSource ?? "",
         first_seen_at: now,
       };
       return { handled: true, stable: false, reminder: null };
@@ -137,6 +198,10 @@ export class CoachingQualitySession {
       id: this.nextReminderId++,
       cue_id: issue.id,
       cue_text: issue.text,
+      rule_version: issue.ruleVersion,
+      condition: issue.condition,
+      measured_signal: issue.ruleCard?.measuredSignal ?? "",
+      threshold_source: issue.ruleCard?.thresholdSource ?? "",
       detected_rep: repetition,
       last_seen_at: now,
       displayed: false,
@@ -182,6 +247,11 @@ export class CoachingQualitySession {
       scoring_version: COACHING_SCORING_VERSION,
       cue_id: this.pending.cue_id,
       cue_text: this.pending.cue_text,
+      rule_version: this.pending.rule_version,
+      condition: this.pending.condition,
+      measured_signal: this.pending.measured_signal,
+      threshold_source: this.pending.threshold_source,
+      scoring_eligible: true,
       trigger_count: 1,
       reminder_rep: reminderRep,
       adjustment_reps: this.graceRepetitions,
@@ -219,16 +289,62 @@ export class CoachingQualitySession {
   }
 
   cuesForPersistence() {
+    const validatedRuleCount = this.ruleInventory.filter(
+      (rule) => rule.scoreable,
+    ).length;
+    const validatedRuleVersions = [...new Set(
+      this.ruleInventory
+        .filter((rule) => rule.scoreable && rule.ruleVersion)
+        .map((rule) => rule.ruleVersion),
+    )];
     return [
       {
         kind: "coaching_quality",
         scoring_version: COACHING_SCORING_VERSION,
+        assessment_label: "camera_based_coaching_response",
+        validated_rule_count: validatedRuleCount,
+        validated_rule_versions: validatedRuleVersions,
+        configured_rule_count: this.ruleInventory.length,
         cue_text: "",
         trigger_count: 0,
         deduction: 0,
       },
+      ...Array.from(this.observations.values()).map(({ record }) => ({
+        ...record,
+      })),
       ...this.records.map((record) => ({ ...record })),
     ];
+  }
+
+  _recordUnscoredObservation(issue, repetition) {
+    const existing = this.observations.get(issue.id);
+    if (existing) {
+      if (!existing.repetitions.has(repetition)) {
+        existing.repetitions.add(repetition);
+        existing.record.trigger_count += 1;
+        existing.record.observed_repetitions = [...existing.repetitions];
+      }
+      return;
+    }
+    const repetitions = new Set([repetition]);
+    this.observations.set(issue.id, {
+      repetitions,
+      record: {
+        kind: "movement_observation",
+        scoring_version: COACHING_SCORING_VERSION,
+        rule_id: issue.id,
+        condition: issue.condition,
+        cue_text: issue.text,
+        trigger_count: 1,
+        observed_repetitions: [repetition],
+        scoring_eligible: false,
+        validation_status: issue.ruleCard?.validationStatus ?? "unvalidated",
+        technical_validation_status:
+          issue.ruleCard?.technicalValidationStatus ?? "unvalidated",
+        reason_not_scored:
+          "Rule has not passed technical validation, clinical validation, and recorded physiotherapist approval.",
+      },
+    });
   }
 
   _assessActiveIfWindowComplete(currentRepetition) {
@@ -269,10 +385,10 @@ export class CoachingQualitySession {
 }
 
 /**
- * Produce a 0–100 coaching-response indicator. In version 2, only documented
- * deductions after delivered reminders affect the score. The legacy branch is
- * used only by direct callers; saved legacy sessions are reassessed below
- * because they contain no proof that their detected cues were delivered.
+ * Produce a 0–100 coaching-response indicator. In version 3, only documented
+ * deductions after delivered reminders affect the score. Saved version-2
+ * coaching-response records remain readable for historical continuity; raw
+ * unversioned frame detections never create a score.
  */
 export function calculateMovementQuality({
   cuesTriggered = [],
@@ -284,7 +400,27 @@ export function calculateMovementQuality({
 
   const versionedRecords = coachingRecords(cuesTriggered);
   if (versionedRecords.length) {
-    const deduction = versionedRecords.reduce(
+    const metadata = versionedRecords.find(
+      (cue) => cue?.kind === "coaching_quality",
+    );
+    const validatedRuleVersions = Array.isArray(
+      metadata?.validated_rule_versions,
+    )
+      ? metadata.validated_rule_versions.map(String).filter(Boolean)
+      : [];
+    if (
+      (nonNegativeNumber(metadata?.validated_rule_count) ?? 0) < 1
+      || validatedRuleVersions.length < 1
+    ) {
+      return null;
+    }
+    const validVersions = new Set(validatedRuleVersions);
+    const deduction = versionedRecords
+      .filter((cue) => (
+        cue?.scoring_eligible === true
+        && validVersions.has(String(cue?.rule_version ?? ""))
+      ))
+      .reduce(
       (sum, cue) => sum + (nonNegativeNumber(cue?.deduction) ?? 0),
       0,
     );
@@ -294,18 +430,32 @@ export function calculateMovementQuality({
     ));
   }
 
-  const cueEvents = (Array.isArray(cuesTriggered) ? cuesTriggered : [])
-    .reduce(
-      (total, cue) => total + boundedCorrectionCount(cue?.trigger_count, reps),
+  // Preserve already-saved version-2 coaching-response scores. Version 3 is
+  // deliberately stricter and will not create a new score without validation.
+  const versionTwoRecords = coachingRecords(cuesTriggered, 2);
+  if (versionTwoRecords.length) {
+    const deduction = versionTwoRecords.reduce(
+      (sum, cue) => sum + (nonNegativeNumber(cue?.deduction) ?? 0),
       0,
     );
-  const symmetryEvents = boundedCorrectionCount(symmetryWarnings, reps);
-  const cuePenalty = Math.min(60, (cueEvents / reps) * 25);
-  const symmetryPenalty = Math.min(20, (symmetryEvents / reps) * 15);
-  return Math.round(Math.max(20, 100 - cuePenalty - symmetryPenalty));
+    return Math.round(Math.max(
+      100 - DEFAULT_MAX_DEDUCTION,
+      100 - Math.min(DEFAULT_MAX_DEDUCTION, deduction),
+    ));
+  }
+
+  // Raw frame counts and symmetry events do not prove that a correction is
+  // clinically meaningful or that the patient received a fair response
+  // window. Unversioned detections therefore cannot create a score.
+  return null;
 }
 
 export function movementQualityFromSession(session = {}) {
+  const execution = session.assessment_summary?.movement_execution;
+  if (execution?.status && execution.status !== "assessed") return null;
+  if (execution?.status === "assessed") {
+    return nonNegativeNumber(execution.score);
+  }
   const reps = Math.round(nonNegativeNumber(session.reps_completed) ?? 0);
   const cues = Array.isArray(session.cues_triggered)
     ? session.cues_triggered
@@ -317,7 +467,10 @@ export function movementQualityFromSession(session = {}) {
     (cue) => (nonNegativeNumber(cue?.trigger_count) ?? 0) > 0,
   ) || symmetryWarnings > 0;
 
-  if (reps > 0 && coachingRecords(cues).length) {
+  if (
+    reps > 0
+    && (coachingRecords(cues).length || coachingRecords(cues, 2).length)
+  ) {
     return calculateMovementQuality({
       cuesTriggered: cues,
       symmetryWarnings,
@@ -332,8 +485,118 @@ export function movementQualityFromSession(session = {}) {
     // those old detections is a justified deduction. The underlying cues and
     // angles remain saved; only their displayed coaching-response score is
     // reassessed.
-    return 100;
+    return null;
   }
 
   return nonNegativeNumber(session.quality_score);
+}
+
+export function buildSessionAssessmentSummary({
+  cuesTriggered = [],
+  repetitionsCompleted = 0,
+  repetitionsMinimum = 0,
+  repetitionsTarget = 0,
+  setsCompleted = 0,
+  setsTarget = 0,
+  tracking = {},
+  stopReason = "",
+} = {}) {
+  const totalFrames = Math.max(0, Math.round(Number(tracking.totalFrames) || 0));
+  const assessableFrames = Math.min(
+    totalFrames,
+    Math.max(0, Math.round(Number(tracking.assessableFrames) || 0)),
+  );
+  const lowConfidenceFrames = Math.max(0, totalFrames - assessableFrames);
+  const lowConfidenceFramesPct = totalFrames
+    ? Math.round((lowConfidenceFrames / totalFrames) * 1000) / 10
+    : null;
+  const trackingStatus = totalFrames < 1 || assessableFrames < 1
+    ? "unable_to_assess"
+    : assessableFrames === totalFrames
+      ? "assessable"
+      : "partially_assessable";
+  const metadata = coachingRecords(cuesTriggered).find(
+    (cue) => cue?.kind === "coaching_quality",
+  );
+  const validatedRuleCount = Math.round(
+    nonNegativeNumber(metadata?.validated_rule_count) ?? 0,
+  );
+  const validatedRuleVersions = Array.isArray(metadata?.validated_rule_versions)
+    ? metadata.validated_rule_versions.map(String).filter(Boolean)
+    : [];
+  const observedRuleIds = [...new Set(
+    (Array.isArray(cuesTriggered) ? cuesTriggered : [])
+      .filter((cue) => cue?.kind === "movement_observation")
+      .map((cue) => String(cue.rule_id ?? "").trim())
+      .filter(Boolean),
+  )];
+  const score = trackingStatus === "unable_to_assess"
+    ? null
+    : calculateMovementQuality({
+      cuesTriggered,
+      repetitions: repetitionsCompleted,
+    });
+  const movementStatus = Number(repetitionsCompleted) < 1
+    || trackingStatus === "unable_to_assess"
+      ? "unable_to_assess"
+      : validatedRuleCount < 1 || validatedRuleVersions.length < 1
+        ? "not_clinically_scored"
+        : "assessed";
+  const targetSets = Math.max(0, Math.round(Number(setsTarget) || 0));
+  const completedSets = Math.max(0, Math.round(Number(setsCompleted) || 0));
+  const completionStatus = targetSets > 0 && completedSets >= targetSets
+    ? "complete"
+    : "incomplete";
+
+  return {
+    version: 1,
+    tracking_validity: {
+      status: trackingStatus,
+      total_frames: totalFrames,
+      assessable_frames: assessableFrames,
+      low_confidence_frames_pct: lowConfidenceFramesPct,
+      limited_tracking_frames: Math.max(
+        0,
+        Math.round(Number(tracking.limitedTrackingFrames) || 0),
+      ),
+      missing_measurements: tracking.missingMeasurements ?? {},
+    },
+    prescription_completion: {
+      status: completionStatus,
+      repetitions_completed: Math.max(
+        0,
+        Math.round(Number(repetitionsCompleted) || 0),
+      ),
+      repetitions_minimum: Math.max(
+        0,
+        Math.round(Number(repetitionsMinimum) || 0),
+      ),
+      repetitions_target: Math.max(
+        0,
+        Math.round(Number(repetitionsTarget) || 0),
+      ),
+      sets_completed: completedSets,
+      sets_target: targetSets,
+    },
+    movement_execution: {
+      status: movementStatus,
+      label: "camera_based_coaching_response",
+      score: movementStatus === "assessed" ? score : null,
+      validated_rule_count: validatedRuleCount,
+      rule_versions: validatedRuleVersions,
+      symmetry_rule_validated: false,
+      observed_unvalidated_rule_ids: observedRuleIds,
+      reason: movementStatus === "not_clinically_scored"
+        ? "No configured rule has completed technical validation, clinical validation, and recorded physiotherapist approval."
+        : movementStatus === "unable_to_assess"
+          ? "No assessable repetition was captured."
+          : "Only validation-gated rules contributed to this coaching-response score.",
+    },
+    symptoms_and_safety: {
+      status: stopReason ? "patient_reported" : "not_reported_during_movement",
+      source: "patient_report",
+      stop_reason: String(stopReason || ""),
+      camera_inference_used: false,
+    },
+  };
 }

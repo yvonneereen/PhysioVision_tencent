@@ -10,8 +10,8 @@ from datetime import timedelta
 
 from django.utils import timezone
 
-# How much the mean-angle scalar must move between the oldest and newest of the
-# last few sessions before we call it a real trend rather than noise.
+# How much a validation-gated coaching-response score must move between the
+# oldest and newest comparable sessions before it is labelled a trend.
 TREND_DELTA = 5
 ADHERENCE_LOOKBACK_DAYS = 7
 
@@ -26,25 +26,34 @@ def parse_days_per_week(value):
 
 def session_quality_trend(patient):
     """
-    Return 'improving' | 'stable' | 'declining' from the last 3 sessions'
-    angle_summaries (mean of all per-angle means). Mirrors the dashboard trend.
+    Return a same-exercise/side trend from the last three validation-gated
+    camera coaching-response scores. Raw angle means are not comparable across
+    exercises and unvalidated observations must not influence care planning.
     """
     sessions = [
-        s for s in patient.sessions.order_by('-started_at')[:3]
-        if s.angle_summaries
+        session
+        for session in patient.sessions.order_by('-started_at')[:20]
+        if (
+            session.quality_score is not None
+            and session.assessment_summary.get(
+                'movement_execution', {}
+            ).get('status') == 'assessed'
+        )
     ]
-    if len(sessions) < 2:
+    if not sessions:
         return 'stable'
-
-    def session_scalar(s):
-        means = [
-            v['mean'] for v in s.angle_summaries.values()
-            if isinstance(v, dict) and 'mean' in v
-        ]
-        return sum(means) / len(means) if means else 0
-
-    scalars = [session_scalar(s) for s in reversed(sessions)]  # oldest → newest
-    delta = scalars[-1] - scalars[0]
+    focus = sessions[0]
+    comparable = [
+        session for session in sessions
+        if (
+            session.exercise_id == focus.exercise_id
+            and session.affected_side == focus.affected_side
+        )
+    ][:3]
+    if len(comparable) < 2:
+        return 'stable'
+    scores = [float(session.quality_score) for session in reversed(comparable)]
+    delta = scores[-1] - scores[0]
     if delta > TREND_DELTA:
         return 'improving'
     if delta < -TREND_DELTA:

@@ -23,7 +23,7 @@ assert.ok(
 );
 assert.deepEqual(
   [...new Set(i18nCacheVersions)],
-  ["35"],
+  ["37"],
   "all browser entry points must use one i18n URL so only one DOM observer is created"
 );
 
@@ -73,7 +73,7 @@ const voiceCacheVersions = voiceConsumerSources.flatMap((source) =>
 );
 assert.deepEqual(
   [...new Set(voiceCacheVersions)],
-  ["44"],
+  ["45"],
   "all voice consumers must share one voice-guidance module instance"
 );
 
@@ -140,6 +140,14 @@ for (const locale of ["zh-SG", "ms-SG", "ta-SG"]) {
     "To pause for a rest without returning to your device, say Hey Guide, I need a rest.",
     "Your camera guide is paused for a rest. Your recognized repetitions are kept. Select Resume camera guide when you are ready to continue.",
     "Camera tracking and AI questions are active together. Say “Hey Guide” to ask something, or say “Hey Guide, I need a rest” to pause. Choose Finish exercise and check in when done.",
+    "Your saved personalized movement range will be reused. This quick 2–3 second check confirms that you are visible and in the correct starting position.",
+    "Move into the standing position shown by the guide and keep every required joint visible.",
+    "Measurement starts automatically.",
+    "Camera is ready. Now step back until your required joints are visible.",
+    "Front view · Phone at chest height · Keep required joints visible",
+    "Listening… Speak normally near your device.",
+    "Listening again… Speak normally near your device.",
+    "I can hear you: “five” — keep speaking.",
   ]) {
     assert.notEqual(
       translateText(source, locale),

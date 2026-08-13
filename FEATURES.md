@@ -3,11 +3,16 @@
 ## Patient — exercise & tracking
 - Camera-guided exercises with MediaPipe pose detection (joint-angle tracking)
 - Real-time rep counting and movement-phase detection
-- Live coaching cues on form (e.g. "keep your feet together")
+- Validation-gated live coaching; unvalidated camera rules are recorded as
+  prototype observations and are not spoken as corrections
 - Personal calibration — measures each patient's comfortable range instead of fixed thresholds
 - Calibration tolerates lower landmark visibility (works for occluded floor/side-lying poses e.g. clamshell)
-- Per-session movement-quality score (0–100) from form faults per rep
-- Movement-trend chart with quality/pain sparklines
+- Separate per-session tracking validity, prescription completion,
+  movement-execution, and patient-reported symptom/safety outputs
+- A nullable 0–100 camera coaching-response score only when the contributing
+  rule version has technical validation, clinical validation, and recorded
+  physiotherapist approval
+- Movement-trend chart with approved coaching-response/pain sparklines
 - Fall / visibility monitoring for floor exercises
 - 12 tracked exercises + a larger draft exercise library (informational cards)
 
@@ -17,7 +22,7 @@
 - AI-assisted wellness plan creation
 - Clinician-prescribed programmes (exercises, sets/reps, days/week, notes, restrictions)
 - Before/after pain check-ins (pain diary)
-- "Recent movement trend" panel: sessions this week, movement quality, latest pain
+- "Recent movement trend" panel: sessions this week, validated coaching response, latest pain
 - Auto trend status (building baseline / steady / improving / review suggested)
 
 ## Patient — care connection

@@ -356,9 +356,9 @@
             <small>completed sessions</small>
           </article>
           <article>
-            <span>Movement quality</span>
+            <span>Camera coaching response</span>
             <strong id="patientQualityMetric">—</strong>
-            <small>recent measured average</small>
+            <small>validated rules only</small>
           </article>
           <article>
             <span>Latest pain check-in</span>
@@ -370,7 +370,7 @@
           class="patient-trend-chart"
           id="patientTrendChart"
           role="img"
-          aria-label="No movement-quality trend is available yet"
+          aria-label="No validated coaching-response trend is available yet"
         ></div>
         <p class="patient-trend-method">
           Early indicators only. The final clinical trend criteria are still
@@ -1607,7 +1607,7 @@
           <h2>AI sees the pattern.<br /><em>People make the call.</em></h2>
           <p class="large-copy">
             Your physiotherapist sees progress—not hours of video. They can
-            review completion, movement quality, pain check-ins, and recurring
+            review completion, validated coaching response, pain check-ins, and recurring
             difficulty, then adjust the plan remotely.
           </p>
           <div class="care-actions">
@@ -1637,7 +1637,7 @@
               <em class="trend-up">↑ 8% this week</em>
             </div>
             <div class="metric-card">
-              <span>Movement quality</span>
+              <span>Camera coaching response</span>
               <strong>78<small>/100</small></strong>
               <em class="trend-down">↓ 5 pts</em>
             </div>
@@ -1651,12 +1651,12 @@
           <div class="chart-card">
             <div class="chart-title">
               <div>
-                <span>Movement quality</span>
+                <span>Camera coaching response</span>
                 <strong>Last 7 sessions</strong>
               </div>
-              <span class="chart-legend"><i></i> Quality score</span>
+              <span class="chart-legend"><i></i> Validated coaching response</span>
             </div>
-            <svg viewBox="0 0 620 220" role="img" aria-label="Movement quality trend declining over seven sessions">
+            <svg viewBox="0 0 620 220" role="img" aria-label="Validated coaching-response trend declining over seven sessions">
               <defs>
                 <linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stop-color="#ef5a3c" stop-opacity=".28"/>
@@ -1829,7 +1829,11 @@
           <strong id="sessionSummaryCompleted">—</strong>
         </article>
         <article>
-          <span>Movement quality</span>
+          <span>Tracking validity</span>
+          <strong id="sessionSummaryTracking">—</strong>
+        </article>
+        <article>
+          <span>Movement execution</span>
           <strong id="sessionSummaryQuality">—</strong>
         </article>
         <article>
@@ -2735,7 +2739,7 @@
           <div class="triage-intro">
             <div>
               <strong>Physiotherapist triage queue</strong>
-              <p>Review each patient’s request together with their recorded pain, recovery, movement-quality and safety signals before deciding whether to claim them.</p>
+              <p>Review each patient’s request together with their recorded pain, recovery, validation-gated coaching-response and safety signals before deciding whether to claim them.</p>
             </div>
             <button class="button button-light button-small" id="triage-refresh" type="button">Refresh queue</button>
           </div>
@@ -2998,14 +3002,14 @@
   <script src="runtime-config.js"></script>
   <p id="textSizeStatus" class="sr-only" role="status" aria-live="polite"></p>
   <script type="module" src="text-size.js?v=1"></script>
-  <script type="module" src="i18n.js?v=35"></script>
+  <script type="module" src="i18n.js?v=37"></script>
   <script type="module" src="auth.js?v=33"></script>
-  <script type="module" src="ui.js?v=35"></script>
-  <script type="module" src="patient-dashboard.js?v=61"></script>
+  <script type="module" src="ui.js?v=36"></script>
+  <script type="module" src="patient-dashboard.js?v=62"></script>
   <script type="module" src="therapist.js?v=47"></script>
   <script type="module" src="exercise-library.js?v=20"></script>
-  <script type="module" src="main.js?v=146"></script>
-  <script type="module" src="agent-chat.js?v=42"></script>
+  <script type="module" src="main.js?v=147"></script>
+  <script type="module" src="agent-chat.js?v=43"></script>
   <script type="module" src="care-workflow.js?v=19"></script>
 </body>
 </html>

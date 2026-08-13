@@ -1,5 +1,5 @@
 import { DRAFT_EXERCISES, requiresClinicianPlan } from "./exercises/catalog.js?v=3";
-import { EXERCISES, EXERCISE_MAP } from "./exercises/registry.js?v=61";
+import { EXERCISES, EXERCISE_MAP } from "./exercises/registry.js?v=62";
 
 // Source of truth for "wired": the exercise exists in the executable registry
 // and is not flagged `comingSoon`. The camera/feedback loop only scores these.

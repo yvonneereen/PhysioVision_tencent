@@ -91,7 +91,13 @@ def _recovery_summary(checkins):
 def _quality_summary(sessions):
     measured = [
         session for session in sessions
-        if session.ended_at is not None and session.quality_score is not None
+        if (
+            session.ended_at is not None
+            and session.quality_score is not None
+            and session.assessment_summary.get(
+                "movement_execution", {}
+            ).get("status") == "assessed"
+        )
     ]
     if not measured:
         return None
@@ -275,7 +281,7 @@ def _safety_signal(checkins):
     if location:
         detail += f" Reported area: {location}."
     detail += (
-        " This is a dated safety event, separate from the movement-quality "
+        " This is a dated safety event, separate from the validated coaching-response "
         "trend; the record does not show whether the symptom is still present."
     )
     return {
@@ -389,14 +395,14 @@ def _quality_signal(quality):
     if not declining and not repeatedly_low:
         return None
     if declining:
-        label = "Same-exercise movement quality declined"
+        label = "Validated camera coaching response declined"
         detail = (
             f"{quality['exercise']} ({quality['side']} side) changed from "
             f"{quality['previous_value']}/100 to {quality['value']}/100 across "
             f"{quality['comparable_sessions']} comparable sessions."
         )
     else:
-        label = "Repeated low movement-quality measurements"
+        label = "Repeated low validated coaching-response measurements"
         detail = (
             f"{quality['low_sessions']} of {quality['comparable_sessions']} "
             f"comparable {quality['exercise']} sessions were below "

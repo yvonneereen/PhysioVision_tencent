@@ -76,26 +76,32 @@ def evaluate_patient_escalations(patient, *, session=None):
                 session=session,
             ))
 
-        # 2. Quality decline
+        # 2. Validation-gated coaching-response decline
         if session_quality_trend(patient) == 'declining' and not _has_open(
             patient, EscalationTrigger.QUALITY_DECLINE
         ):
             created.append(_raise(
                 patient, EscalationTrigger.QUALITY_DECLINE,
-                "Movement quality is trending downward across recent sessions.",
+                "A validated same-exercise camera coaching-response trend is declining.",
                 session=session,
             ))
 
         # 3. Symmetry concern
         latest = session or patient.sessions.order_by('-started_at').first()
+        latest_execution = (
+            latest.assessment_summary.get("movement_execution", {})
+            if latest is not None else {}
+        )
         if (
             latest is not None
+            and latest_execution.get("status") == "assessed"
+            and latest_execution.get("symmetry_rule_validated") is True
             and latest.symmetry_warnings_count >= SYMMETRY_WARNINGS_THRESHOLD
             and not _has_open(patient, EscalationTrigger.SYMMETRY_CONCERN)
         ):
             created.append(_raise(
                 patient, EscalationTrigger.SYMMETRY_CONCERN,
-                f"{latest.symmetry_warnings_count} symmetry warnings in the latest session.",
+                f"{latest.symmetry_warnings_count} validation-gated symmetry warnings in the latest session.",
                 session=latest,
             ))
 

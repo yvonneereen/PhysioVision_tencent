@@ -8,8 +8,8 @@ const page = read("../index.html");
 
 assert.match(
   therapist,
-  /function renderTriageEvidence[\s\S]*?Latest pain[\s\S]*?Movement quality[\s\S]*?Recovery[\s\S]*?Patient-reported background/,
-  "triage should expose pain, same-exercise movement quality, and recovery evidence",
+  /function renderTriageEvidence[\s\S]*?Latest pain[\s\S]*?Validated coaching response[\s\S]*?Recovery[\s\S]*?Patient-reported background/,
+  "triage should expose pain, validation-gated same-exercise coaching response, and recovery evidence",
 );
 assert.match(
   therapist,
@@ -33,7 +33,7 @@ assert.match(
 );
 assert.match(
   page,
-  /recorded pain, recovery, movement-quality and safety signals/,
+  /recorded pain, recovery, validation-gated coaching-response and safety signals/,
   "the queue should explain the evidence clinicians are reviewing",
 );
 

@@ -465,21 +465,27 @@ def build_patient_summary_blocks(patient):
     recent = list(
         Session.objects.filter(patient=patient).order_by('-started_at')[:8]
     )[::-1]
-    quality_spark = _sparkline([s.quality_score for s in recent], lo=0, hi=100)
+    quality_spark = _sparkline([
+        _validated_movement_score(session) for session in recent
+    ], lo=0, hi=100)
     pain_spark    = _sparkline([s.pain_level for s in recent], lo=0, hi=10)
     adherence     = adherence_pct(patient)
 
     lines = [f"*Patient summary: {name}*"]
     lines.append(f"Goal: {patient.goal or '—'} | Care path: {patient.care_path or '—'}")
     lines.append(
-        f"Quality `{quality_spark}` · Pain `{pain_spark}` · "
+        f"Validated coaching response `{quality_spark}` · Pain `{pain_spark}` · "
         f"Adherence {adherence if adherence is not None else '—'}%"
     )
 
     if sessions:
         lines.append(f"\n*Last {sessions.count()} session(s) this week:*")
         for s in sessions:
-            lines.append(f"  • {s.exercise.name}: {s.reps_completed}/{s.reps_target} reps, quality {s.quality_score or '—'}/100")
+            score = _validated_movement_score(s)
+            lines.append(
+                f"  • {s.exercise.name}: {s.reps_completed}/{s.reps_target} reps, "
+                f"validated coaching response {score if score is not None else '—'}/100"
+            )
     else:
         lines.append("\nNo sessions in the last 7 days.")
 
@@ -709,7 +715,7 @@ def build_adherence_blocks(patient):
     return _section(
         f"*{name}*\n"
         f"Adherence: *{adherence if adherence is not None else '—'}%* · "
-        f"Quality trend: *{trend}* · "
+        f"Validated coaching-response trend: *{trend}* · "
         f"{recent_count} session(s) in the last 7 days"
     )
 
@@ -723,9 +729,11 @@ def build_sessions_blocks(patient):
         return _section(f"No sessions logged for {name}.")
     lines = [f"*Recent sessions — {name}*"]
     for s in sessions:
+        score = _validated_movement_score(s)
         lines.append(
             f"  • {s.started_at:%d %b} · {s.exercise.name}: "
-            f"{s.reps_completed}/{s.reps_target} reps, quality {s.quality_score or '—'}/100"
+            f"{s.reps_completed}/{s.reps_target} reps, "
+            f"validated coaching response {score if score is not None else '—'}/100"
             f"{f', pain {s.pain_level}/10' if s.pain_level is not None else ''}"
         )
     return _section("\n".join(lines))
@@ -829,6 +837,15 @@ def _patient_age(patient):
     return today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
 
 
+def _validated_movement_score(session):
+    execution = (session.assessment_summary or {}).get(
+        "movement_execution", {}
+    )
+    if execution.get("status") != "assessed":
+        return None
+    return session.quality_score
+
+
 def _clinical_context(patient):
     """Snapshot of how the patient is actually doing — feeds the planner prompt
     and the dose decision. Never raises; missing data just means fewer signals."""
@@ -842,7 +859,10 @@ def _clinical_context(patient):
     if latest_pain and latest_pain.pain_level is not None:
         pains.append(latest_pain.pain_level)
         pain_loc = latest_pain.location_notes or ""
-    qualities = [s.quality_score for s in recent if s.quality_score is not None]
+    qualities = [
+        score for score in (_validated_movement_score(s) for s in recent)
+        if score is not None
+    ]
 
     return {
         "age": _patient_age(patient),
@@ -850,7 +870,13 @@ def _clinical_context(patient):
         "pain_loc": pain_loc,
         "avg_quality": round(sum(qualities) / len(qualities)) if qualities else None,
         "trend": session_quality_trend(patient),
-        "symmetry": sum(s.symmetry_warnings_count for s in recent),
+        "symmetry": sum(
+            s.symmetry_warnings_count
+            for s in recent
+            if (s.assessment_summary or {}).get(
+                "movement_execution", {}
+            ).get("symmetry_rule_validated") is True
+        ),
         "adherence": adherence_pct(patient),
         "open_flags": list(dict.fromkeys(
             TRIGGER_LABELS.get(e.trigger_type, e.trigger_type)
@@ -871,7 +897,10 @@ def _clinical_summary_line(ctx):
     if ctx["max_pain"] is not None:
         bits.append(f"peak pain {ctx['max_pain']}/10")
     if ctx["avg_quality"] is not None:
-        bits.append(f"quality {ctx['avg_quality']}/100 ({ctx['trend']})")
+        bits.append(
+            f"validated coaching response {ctx['avg_quality']}/100 "
+            f"({ctx['trend']})"
+        )
     if ctx["symmetry"]:
         bits.append(f"{ctx['symmetry']} symmetry warnings")
     if ctx["adherence"] is not None:
@@ -893,7 +922,10 @@ def _clinical_notes_text(ctx):
             "area, prefer gentle mobility/stretching, and keep intensity low."
         )
     if ctx["trend"] == "declining":
-        notes.append("Movement quality is declining: keep the plan simple and easy to perform well.")
+        notes.append(
+            "The validation-gated coaching response is declining: keep the "
+            "plan simple and request clinician review before changing technique."
+        )
     if ctx["current_rx"]:
         notes.append("Complement (do not exactly duplicate) the current programme where sensible.")
     return " ".join(notes)
@@ -1116,7 +1148,7 @@ def generate_patient_message(patient):
         "medical advice or prescription changes. Acknowledge their effort and gently "
         "encourage consistency.\n\n"
         f"Patient first name: {name}\n"
-        f"Recent movement-quality trend: {trend}\n"
+        f"Recent validation-gated coaching-response trend: {trend}\n"
         f"Adherence to prescribed sessions: "
         f"{adherence if adherence is not None else 'unknown'}%\n"
     )
@@ -1185,14 +1217,15 @@ Reps completed: {session.reps_completed}/{session.reps_target}
 Minimum repetitions for completion: {session.reps_minimum or session.reps_target}
 Early stop reason: {session.stop_reason or 'Not recorded'}
 Early stop review flag: {session.stop_requires_review}
-Quality score: {session.quality_score}/100
+Validation-gated movement assessment: {session.assessment_summary}
 Pain level reported: {session.pain_level}/10
-Movement angle summaries: {session.angle_summaries}
+Camera angle summaries (technical observations only): {session.angle_summaries}
 Coaching cues triggered: {session.cues_triggered}
 Symmetry warnings: {session.symmetry_warnings_count}
 
 Write a concise SOAP-format note (Subjective, Objective, Assessment, Plan) \
-suitable for a clinical record. Be specific about angles and quality metrics. \
+suitable for clinician review. Do not interpret raw angles or unvalidated \
+camera observations as clinical correctness, impairment, risk, or diagnosis. \
 Keep it under 200 words."""
 
     return _gemini_generate(prompt)

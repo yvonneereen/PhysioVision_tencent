@@ -34,6 +34,24 @@ from api.sessions.models import (
 )
 
 
+def validated_movement_assessment(score):
+    return {
+        "version": 1,
+        "tracking_validity": {"status": "assessable"},
+        "prescription_completion": {"status": "complete"},
+        "movement_execution": {
+            "status": "assessed",
+            "score": score,
+            "rule_versions": ["test-approved-rule"],
+        },
+        "symptoms_and_safety": {
+            "status": "not_reported_during_movement",
+            "source": "patient_report",
+            "camera_inference_used": False,
+        },
+    }
+
+
 class ClinicianTriageTests(APITestCase):
     queue_url = "/api/auth/clinician/triage/"
 
@@ -193,6 +211,7 @@ class ClinicianTriageTests(APITestCase):
             sets_target=1,
             affected_side=AffectedSide.RIGHT,
             quality_score=76,
+            assessment_summary=validated_movement_assessment(76),
         )
         latest_session = Session.objects.create(
             patient=self.wellness,
@@ -205,6 +224,7 @@ class ClinicianTriageTests(APITestCase):
             sets_target=1,
             affected_side=AffectedSide.RIGHT,
             quality_score=45,
+            assessment_summary=validated_movement_assessment(45),
         )
         Session.objects.create(
             patient=self.wellness,
@@ -217,6 +237,7 @@ class ClinicianTriageTests(APITestCase):
             sets_target=1,
             affected_side=AffectedSide.RIGHT,
             quality_score=90,
+            assessment_summary=validated_movement_assessment(90),
         )
         PainCheckin.objects.create(
             patient=self.wellness,

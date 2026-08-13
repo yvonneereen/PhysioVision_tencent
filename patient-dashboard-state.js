@@ -1,4 +1,4 @@
-import { movementQualityFromSession } from "./movement-quality.js?v=3";
+import { movementQualityFromSession } from "./movement-quality.js?v=4";
 
 export const PROVISIONAL_TREND_THRESHOLDS = Object.freeze({
   qualityDeclinePoints: 8,
@@ -231,7 +231,7 @@ export function analysePatientTrend({
       reason = "pain_increase";
     } else {
       message =
-        "Your recent measured movement-quality scores have decreased across several sessions.";
+        "Your recent validation-gated coaching-response scores have decreased across several comparable sessions.";
       reason = "quality_decline";
     }
   } else if (trendReadingCount === 1) {
@@ -243,7 +243,7 @@ export function analysePatientTrend({
     } else {
       title = "Your first linked session check-in is recorded";
       message =
-        "Pain and recovery were saved, but movement quality was not measured. Keep the required joints visible so the next session can add a camera-measured result.";
+        "Pain and recovery were saved, but no validation-gated movement-execution score was produced. Review the session tracking result and continue only with clinician-approved guidance.";
     }
   } else if (trendReadingCount === 2) {
     status = "preliminary";

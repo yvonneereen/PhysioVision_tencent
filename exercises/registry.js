@@ -143,7 +143,9 @@ export const EXERCISES = [
       fromPhase: "standing",
       targetPhase: "squat",
       minimumChange: 10,
-      targetRange: [90, 155],
+      // Broad technical bounds prevent impossible landmark geometry from
+      // entering the phase detector. They are not a clinical depth limit.
+      targetRange: [45, 165],
       returnTolerance: 15,
       // Count the return after most of the observed knee-angle excursion has
       // recovered. Requiring the exact first-frame standing angle caused the
@@ -180,13 +182,13 @@ export const EXERCISES = [
           knee: [145, 180],
         },
         target: {
-          // A shallower comfortable squat can be calibrated, while 90° remains
-          // the deepest permitted knee angle in this prototype.
-          knee: [90, 155],
+          // This is a broad capture-validity range, not a clinically prescribed
+          // depth. The person's comfortable target is stored by calibration.
+          knee: [45, 165],
         },
       },
       captureErrors: {
-        knee: "Use a comfortable half-squat depth and do not bend past 90°.",
+        knee: "Use the comfortable half-squat depth prescribed or approved for you.",
       },
     },
     phases: [
@@ -197,7 +199,7 @@ export const EXERCISES = [
       },
       {
         name: "squat",
-        knee: [90, 130],
+        knee: [45, 155],
         hip: [90, 135],
       },
     ],
@@ -205,20 +207,64 @@ export const EXERCISES = [
     stageImages: ["standing", "squat", "standing"],
     symmetry: { joint: "knee", maxDiffDeg: 15, requiredForTracking: false },
     cues: {
-      "leftKnee<90": "Make the squat less deep. Lower only as far as is comfortable and controlled",
-      "rightKnee<90": "Make the squat less deep. Lower only as far as is comfortable and controlled",
-      "torsoLean>40": "Move your hips back and bring your chest comfortably upright",
       // Front-camera depth makes this ratio useful as optional live guidance,
-      // but not reliable enough to lower a movement-quality score.
+      // but it is not a validated knee-position or clinical-correctness test.
       "leftKneeForwardRatio>0.15": {
-        message: "Make the squat a little shallower. Keep your whole foot flat and move your hips back as if sitting",
+        ruleId: "half-squat:knee-forward-proxy",
+        message: "The camera observed forward knee movement relative to the foot. This is an observation only; follow your prescribed technique.",
         qualityReliable: false,
+        scoringEligible: false,
+        ruleCard: {
+          clinicalClaim: "The front-camera knee-to-foot proxy exceeded the engineering threshold.",
+          intendedPopulation: "Not established; prototype observation only.",
+          measuredSignal: "Horizontal knee position relative to ankle-to-foot length.",
+          cameraView: "front",
+          thresholdSource: "engineering_seed",
+          feedback: "Report the observation without prescribing a universal knee position.",
+          unableToAssessConditions: ["Foot occluded", "Knee occluded", "Camera depth ambiguity", "Low landmark confidence"],
+          contraindicationsContext: "Clinician-defined restrictions and individual squat strategy take precedence.",
+          validationStatus: "unvalidated",
+          technicalValidationStatus: "unvalidated",
+          clinicianApproval: { approved: false, approvedBy: "", approvedAt: "", version: "" },
+        },
       },
       "rightKneeForwardRatio>0.15": {
-        message: "Make the squat a little shallower. Keep your whole foot flat and move your hips back as if sitting",
+        ruleId: "half-squat:knee-forward-proxy",
+        message: "The camera observed forward knee movement relative to the foot. This is an observation only; follow your prescribed technique.",
         qualityReliable: false,
+        scoringEligible: false,
+        ruleCard: {
+          clinicalClaim: "The front-camera knee-to-foot proxy exceeded the engineering threshold.",
+          intendedPopulation: "Not established; prototype observation only.",
+          measuredSignal: "Horizontal knee position relative to ankle-to-foot length.",
+          cameraView: "front",
+          thresholdSource: "engineering_seed",
+          feedback: "Report the observation without prescribing a universal knee position.",
+          unableToAssessConditions: ["Foot occluded", "Knee occluded", "Camera depth ambiguity", "Low landmark confidence"],
+          contraindicationsContext: "Clinician-defined restrictions and individual squat strategy take precedence.",
+          validationStatus: "unvalidated",
+          technicalValidationStatus: "unvalidated",
+          clinicianApproval: { approved: false, approvedBy: "", approvedAt: "", version: "" },
+        },
       },
-      "kneeDiff>15": "Point both knees in the same direction as your toes and bend both knees together",
+      "kneeDiff>15": {
+        ruleId: "half-squat:knee-flexion-difference",
+        message: "The camera observed different knee-bending angles. This does not assess knee-to-toe alignment.",
+        scoringEligible: false,
+        ruleCard: {
+          clinicalClaim: "The measured left/right knee-flexion difference exceeded 15 degrees.",
+          intendedPopulation: "Not established; prototype observation only.",
+          measuredSignal: "Absolute difference between left and right sagittal knee-flexion estimates.",
+          cameraView: "front",
+          thresholdSource: "engineering_seed",
+          feedback: "Report unequal measured bending without claiming frontal-plane knee alignment.",
+          unableToAssessConditions: ["Either leg occluded", "Low landmark confidence", "Camera not level"],
+          contraindicationsContext: "Natural asymmetry, prescribed unloading, and side-specific restrictions require clinician interpretation.",
+          validationStatus: "unvalidated",
+          technicalValidationStatus: "unvalidated",
+          clinicianApproval: { approved: false, approvedBy: "", approvedAt: "", version: "" },
+        },
+      },
     },
   },
 

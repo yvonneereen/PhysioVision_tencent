@@ -1,18 +1,78 @@
 import assert from "node:assert/strict";
 
 import {
+  buildSessionAssessmentSummary,
   calculateMovementQuality,
   CoachingQualitySession,
+  isClinicalRuleScoreable,
   movementQualityFromSession,
 } from "../movement-quality.js";
 
 const metadata = {
   kind: "coaching_quality",
-  scoring_version: 2,
+  scoring_version: 3,
+  validated_rule_count: 1,
+  validated_rule_versions: ["PV-TEST-1"],
   cue_text: "",
   trigger_count: 0,
   deduction: 0,
 };
+
+const validatedRuleCard = {
+  clinicalClaim: "The measured test signal exceeded its approved threshold.",
+  intendedPopulation: "Older adults in the approved exercise programme.",
+  measuredSignal: "Test joint angle.",
+  cameraView: "front",
+  thresholdSource: "Locked validation protocol PV-TEST-1.",
+  feedback: "Use the approved correction.",
+  unableToAssessConditions: ["Low confidence"],
+  contraindicationsContext: "Clinician restrictions take precedence.",
+  validationStatus: "clinically_validated",
+  technicalValidationStatus: "validated",
+  clinicianApproval: {
+    approved: true,
+    approvedBy: "Test physiotherapist",
+    approvedAt: "2026-08-13",
+    version: "PV-TEST-1",
+  },
+};
+
+const validatedCue = (id, message) => ({
+  id,
+  message,
+  condition: "testAngle>10",
+  scoringEligible: true,
+  ruleCard: validatedRuleCard,
+});
+
+assert.equal(isClinicalRuleScoreable(validatedCue("test", "Test")), true);
+assert.equal(
+  isClinicalRuleScoreable({
+    id: "unvalidated",
+    message: "Prototype",
+    scoringEligible: true,
+    ruleCard: { ...validatedRuleCard, validationStatus: "unvalidated" },
+  }),
+  false,
+  "a developer flag must not bypass missing clinical validation",
+);
+assert.equal(
+  isClinicalRuleScoreable({
+    scoringEligible: true,
+    ruleCard: {
+      validationStatus: "clinically_validated",
+      technicalValidationStatus: "validated",
+      clinicianApproval: {
+        approved: true,
+        approvedBy: "Test physiotherapist",
+        approvedAt: "2026-08-13",
+        version: "INCOMPLETE",
+      },
+    },
+  }),
+  false,
+  "approval flags must not substitute for a complete clinical rule card",
+);
 
 assert.equal(
   calculateMovementQuality({ repetitions: 0 }),
@@ -31,7 +91,7 @@ assert.equal(
     repetitions: 12,
     cuesTriggered: [
       metadata,
-      { scoring_version: 2, delivered: true, outcome: "persisted", deduction: 5 },
+      { scoring_version: 3, rule_version: "PV-TEST-1", scoring_eligible: true, delivered: true, outcome: "persisted", deduction: 5 },
     ],
   }),
   95,
@@ -44,7 +104,9 @@ assert.equal(
     cuesTriggered: [
       metadata,
       ...Array.from({ length: 10 }, () => ({
-        scoring_version: 2,
+        scoring_version: 3,
+        rule_version: "PV-TEST-1",
+        scoring_eligible: true,
         delivered: true,
         outcome: "persisted",
         deduction: 5,
@@ -57,7 +119,8 @@ assert.equal(
 
 {
   const tracker = new CoachingQualitySession({ stableForMs: 800 });
-  const cue = { id: "torso", message: "Bring your chest upright" };
+  const cue = validatedCue("torso", "Bring your chest upright");
+  tracker.configureRules({ "torsoLean>40": cue });
   assert.equal(tracker.observe({ cue, timestampMs: 0, repetitionNumber: 1 }).reminder, null);
   assert.equal(tracker.observe({ cue, timestampMs: 799, repetitionNumber: 1 }).reminder, null);
   const reminder = tracker.observe({ cue, timestampMs: 800, repetitionNumber: 1 }).reminder;
@@ -82,6 +145,9 @@ assert.equal(
   );
   assert.equal(record.outcome, "persisted");
   assert.equal(record.deduction, 5);
+  assert.equal(record.condition, "testAngle>10");
+  assert.equal(record.measured_signal, "Test joint angle.");
+  assert.equal(record.rule_version, "PV-TEST-1");
   assert.equal(
     calculateMovementQuality({
       repetitions: 3,
@@ -99,7 +165,8 @@ assert.equal(
 
 {
   const tracker = new CoachingQualitySession({ stableForMs: 0 });
-  const cue = { id: "knees", message: "Align your knees with your toes" };
+  const cue = validatedCue("knees", "Use the approved knee correction");
+  tracker.configureRules({ "kneeDiff>15": cue });
   tracker.observe({ cue, timestampMs: 0, repetitionNumber: 1 });
   const reminder = tracker.observe({ cue, timestampMs: 1, repetitionNumber: 1 }).reminder;
   tracker.markDisplayed(reminder.id);
@@ -133,12 +200,21 @@ assert.equal(
   });
   assert.equal(observation.reminder, null);
   tracker.finish(3);
-  assert.equal(tracker.cuesForPersistence().length, 1);
+  const records = tracker.cuesForPersistence();
+  assert.equal(records.length, 2);
+  assert.equal(records[1].kind, "movement_observation");
+  assert.equal(records[1].scoring_eligible, false);
+  assert.equal(
+    calculateMovementQuality({ repetitions: 3, cuesTriggered: records }),
+    null,
+    "an unvalidated observation must not produce or lower a score",
+  );
 }
 
 {
   const tracker = new CoachingQualitySession({ stableForMs: 0 });
-  const cue = { id: "audio-wait", message: "Stand tall" };
+  const cue = validatedCue("audio-wait", "Use the approved standing cue");
+  tracker.configureRules({ "knee<150": cue });
   tracker.observe({ cue, timestampMs: 0, repetitionNumber: 1 });
   const reminder = tracker.observe({ cue, timestampMs: 1, repetitionNumber: 1 }).reminder;
   tracker.markDisplayed(reminder.id);
@@ -173,8 +249,41 @@ assert.equal(
     }],
     symmetry_warnings_count: 0,
   }),
-  100,
-  "legacy detections without reminder-delivery evidence must not deduct points",
+  null,
+  "legacy detections without validation or delivery evidence must not create a score",
 );
+
+{
+  const tracker = new CoachingQualitySession({ stableForMs: 0 });
+  tracker.configureRules({ "torsoLean>40": "Prototype torso observation" });
+  tracker.observe({
+    cue: {
+      id: "prototype-torso",
+      message: "Prototype torso observation",
+      scoringEligible: false,
+    },
+    repetitionNumber: 1,
+  });
+  const summary = buildSessionAssessmentSummary({
+    cuesTriggered: tracker.cuesForPersistence(),
+    repetitionsCompleted: 6,
+    repetitionsMinimum: 6,
+    repetitionsTarget: 10,
+    setsCompleted: 1,
+    setsTarget: 1,
+    tracking: {
+      totalFrames: 10,
+      assessableFrames: 8,
+      limitedTrackingFrames: 2,
+      missingMeasurements: { leftKnee: 2 },
+    },
+  });
+  assert.equal(summary.tracking_validity.status, "partially_assessable");
+  assert.equal(summary.tracking_validity.low_confidence_frames_pct, 20);
+  assert.equal(summary.prescription_completion.status, "complete");
+  assert.equal(summary.movement_execution.status, "not_clinically_scored");
+  assert.equal(summary.movement_execution.score, null);
+  assert.equal(summary.symptoms_and_safety.camera_inference_used, false);
+}
 
 console.log("movement quality coaching tests passed");

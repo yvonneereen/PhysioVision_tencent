@@ -149,3 +149,52 @@ mobility aid remain partial-observation or proxy trackers because the camera
 cannot measure force, weight bearing, equipment stability or pain. Every
 prototype requires clinician review and clinician-labelled real-video
 validation before its thresholds can be considered reliable.
+
+## Validation-gated movement execution
+
+The runtime now keeps four outputs separate in every newly saved session:
+
+- `tracking_validity`: whether the required landmarks could be assessed;
+- `prescription_completion`: repetitions and sets completed against the
+  prescribed minimum and target;
+- `movement_execution`: only rules that pass the validation gate can produce a
+  camera-based coaching-response score;
+- `symptoms_and_safety`: patient-reported stop reasons only. The camera does not
+  infer pain, dizziness, breathlessness, or fatigue.
+
+Every correction is converted to a rule card at runtime. A rule is scoreable
+only when all of the following are explicitly recorded:
+
+```js
+{
+  scoringEligible: true,
+  ruleCard: {
+    clinicalClaim,
+    intendedPopulation,
+    measuredSignal,
+    cameraView,
+    thresholdSource,
+    feedback,
+    unableToAssessConditions,
+    contraindicationsContext,
+    technicalValidationStatus: "validated",
+    validationStatus: "clinically_validated",
+    clinicianApproval: {
+      approved: true,
+      approvedBy,
+      approvedAt,
+      version,
+    },
+  },
+}
+```
+
+Missing evidence fails closed: the camera event is saved as an unvalidated
+observation, it cannot trigger a deduction, and the session displays “Not
+clinically scored.” Current registry thresholds remain `engineering_seed`
+prototypes, so none are validation-gated scoring rules yet.
+
+The half-squat implementation also no longer treats knee flexion below 90° or
+torso lean above 40° as universal errors. The front-camera knee-forward proxy
+and left/right knee-flexion difference remain visible observations only, and
+the symmetry observation explicitly does not claim knee-to-toe alignment.

@@ -7,7 +7,7 @@ import {
   measureHandExerciseFrame,
   measurePoseExerciseFrame,
 } from "./exercise-tracking.js?v=2";
-import { FeedbackEngine, EXERCISES } from "./feedback/engine.js?v=50";
+import { FeedbackEngine, EXERCISES } from "./feedback/engine.js?v=51";
 import { POSES } from "./poses.js";
 import {
   calibrationFrameMatchesPhase,
@@ -25,9 +25,9 @@ import {
   evaluateCalibrationReuse,
 } from "./calibration-policy.js?v=2";
 import {
-  calculateMovementQuality,
+  buildSessionAssessmentSummary,
   CoachingQualitySession,
-} from "./movement-quality.js?v=3";
+} from "./movement-quality.js?v=4";
 import {
   createEmergencyAlert,
   getPainCheckins,
@@ -41,9 +41,9 @@ import {
   sendAgentMessage,
   updatePainCheckin,
 } from "./api.js?v=32";
-import { analysePatientTrend } from "./patient-dashboard-state.js?v=13";
+import { analysePatientTrend } from "./patient-dashboard-state.js?v=14";
 import { DRAFT_EXERCISES } from "./exercises/catalog.js?v=3";
-import { translateText } from "./i18n.js?v=35";
+import { translateText } from "./i18n.js?v=37";
 import {
   isMovementRestRequest,
   parseConfirmationResponse,
@@ -55,7 +55,7 @@ import {
   isSafariBrowser,
   readMicrophonePermissionState,
   voiceGuidance,
-} from "./voice-guidance.js?v=44";
+} from "./voice-guidance.js?v=45";
 import {
   PRACTICE_VIEWS,
   acceptedWellnessPlan,
@@ -1317,6 +1317,12 @@ function renderCameraRepProgress(
 // Accumulated per-session stats (reset on each camera start)
 const sessionCoachingQuality = new CoachingQualitySession();
 const sessionAngleStats = {}; // {angleName: {min, max, sum, count}}
+const sessionTrackingStats = {
+  totalFrames: 0,
+  assessableFrames: 0,
+  limitedTrackingFrames: 0,
+  missingMeasurements: {},
+};
 let spokenCoachingCandidate = null;
 let spokenRepCount = 0;
 let queuedSpokenRepCount = 0;
@@ -1374,6 +1380,25 @@ function speakMovementGuide(message, options = {}) {
     rate,
     pitch,
   });
+}
+
+function localizedGuidanceParts(parts) {
+  return parts
+    .map((part) => String(part ?? "").trim())
+    .filter(Boolean)
+    .map((part) => translateText(part))
+    .join(" ");
+}
+
+function setTranslatableTextParts(element, parts) {
+  const textParts = parts
+    .map((part) => String(part ?? "").trim())
+    .filter(Boolean);
+  element.replaceChildren(
+    ...textParts.map((part, index) =>
+      document.createTextNode(`${index ? " " : ""}${part}`)
+    )
+  );
 }
 
 function movementAiConversationActive() {
@@ -1450,8 +1475,11 @@ function currentMovementAiContext() {
     rep_count: completedSessionReps + (Number.isFinite(currentReps) ? currentReps : 0),
     set_number: completedSetCount + 1,
     tracking_ready: Boolean(feedback?.trackingReady),
-    current_cues: Array.isArray(feedback?.cues)
-      ? feedback.cues.slice(0, 3).map(personalizeCue)
+    current_cues: Array.isArray(feedback?.cueDetails)
+      ? feedback.cueDetails
+        .filter((cue) => cue.scoringEligible === true)
+        .slice(0, 3)
+        .map((cue) => cue.message)
       : [],
     session_active: Boolean(exerciseSessionActive),
     camera_running: Boolean(running),
@@ -3522,6 +3550,15 @@ function updateFeedbackPanel(angles, timestampMs) {
     return lastFeedbackResult;
   }
   const fb = engine.update(angles, timestampMs);
+  if (exerciseSessionActive) {
+    sessionTrackingStats.totalFrames += 1;
+    if (fb.trackingReady) sessionTrackingStats.assessableFrames += 1;
+    if (fb.limitedTracking) sessionTrackingStats.limitedTrackingFrames += 1;
+    for (const measurement of fb.missingMeasurements ?? []) {
+      sessionTrackingStats.missingMeasurements[measurement] =
+        (sessionTrackingStats.missingMeasurements[measurement] ?? 0) + 1;
+    }
+  }
 
   // ── Debug logging (remove before release) ────────────────────────────────
   if (window._pvDebug) {
@@ -3640,19 +3677,24 @@ function updateFeedbackPanel(angles, timestampMs) {
     ?? (fb.cues[0]
       ? { id: fb.cues[0], message: fb.cues[0], qualityReliable: true }
       : null);
+  // Validated feedback wording is versioned evidence and must be delivered
+  // exactly as approved. Prototype rules are recorded for review, but are not
+  // converted into personalized movement instructions.
   const personalizedCueDetail = primaryCueDetail
-    ? { ...primaryCueDetail, message: personalizeCue(primaryCueDetail.message) }
+    ? { ...primaryCueDetail }
     : null;
   const qualityObservation = sessionCoachingQuality.observe({
     cue: personalizedCueDetail,
     timestampMs,
     repetitionNumber: currentCoachingRepetitionNumber(fb),
   });
-  const primaryCueIsScoreable = personalizedCueDetail?.qualityReliable !== false;
+  const primaryCueIsScoreable = personalizedCueDetail?.scoringEligible === true;
   const visiblePrimaryCue = personalizedCueDetail && (
     !primaryCueIsScoreable || qualityObservation.stable
   )
-    ? personalizedCueDetail.message
+    ? primaryCueIsScoreable
+      ? personalizedCueDetail.message
+      : "Prototype camera observation recorded for clinician review. Continue only with your approved exercise instructions."
     : null;
   const personalizedCues = visiblePrimaryCue ? [visiblePrimaryCue] : [];
   cueListEl.innerHTML = personalizedCues
@@ -3724,7 +3766,7 @@ function updateFeedbackPanel(angles, timestampMs) {
       fb,
     );
   }
-  if (!qualityReminderHandled) {
+  if (!qualityReminderHandled && !qualityObservation.observationOnly) {
     queueSpokenMovementCue(bannerState, bannerCue, timestampMs);
   }
 
@@ -4154,29 +4196,29 @@ function renderCalibrationStep() {
       : `Personalize ${engine.exercise.name} detection`;
     const startInstruction = engine.exercise.calibration.startInstruction
       ?? `Hold ${engine.exercise.calibration.startPhase.replaceAll("_", " ")} with every required joint visible.`;
-    calibrationInstructions.textContent = isPositionCheck
-      ? (
-        "Your saved personalized movement range will be reused. This quick "
-        + "2–3 second check confirms that you are visible and in the correct "
-        + `starting position. ${startInstruction} Measurement starts automatically.`
-      )
-      : (
-        "This short spoken setup measures your comfortable positions so "
-        + "PhysioVision can recognize your movement more accurately. It does "
-        + "not change safety limits. "
-        + `${startInstruction} No extra button is needed—measurement starts `
-        + "automatically when you hold the position."
-      );
+    setTranslatableTextParts(
+      calibrationInstructions,
+      isPositionCheck
+        ? [
+          "Your saved personalized movement range will be reused. This quick 2–3 second check confirms that you are visible and in the correct starting position.",
+          startInstruction,
+          "Measurement starts automatically.",
+        ]
+        : [
+          "This short spoken setup measures your comfortable positions so PhysioVision can recognize your movement more accurately. It does not change safety limits.",
+          startInstruction,
+          "No extra button is needed—measurement starts automatically when you hold the position.",
+        ]
+    );
   } else {
     calibrationStepLabel.textContent = "Step 2 · One comfortable movement";
     calibrationTitle.textContent = engine.exercise.calibration.targetTitle
       ?? `Move to ${engine.exercise.calibration.targetPhase.replaceAll("_", " ")}`;
-    calibrationInstructions.textContent =
-      (
-        engine.exercise.calibration.targetInstruction
-        ?? "Move only as far as is comfortable, then hold the position."
-      )
-      + " Spoken guidance will lead you, and measurement starts automatically.";
+    setTranslatableTextParts(calibrationInstructions, [
+      engine.exercise.calibration.targetInstruction
+        ?? "Move only as far as is comfortable, then hold the position.",
+      "Spoken guidance will lead you, and measurement starts automatically.",
+    ]);
   }
 }
 
@@ -4607,20 +4649,18 @@ function announceCalibrationStage(
     const startInstruction = config.startInstruction
       ?? `Hold your ${config.startPhase.replaceAll("_", " ")} position with your full body visible.`;
     const cameraReadyPositioning = exerciseUsesHand(engine.exercise)
-      ? "Camera is ready. Now place the required hand and arm inside the guide. "
-      : "Camera is ready. Now step back until your required joints are visible. ";
+      ? "Camera is ready. Now place the required hand and arm inside the guide."
+      : "Camera is ready. Now step back until your required joints are visible.";
     const introduction = calibrationSession.mode === "position-check"
-      ? (
-        cameraReadyPositioning
-        + "I will quickly confirm your starting position using your saved personal range. "
-      )
-      : (
-        cameraReadyPositioning
-        + "Let’s personalize movement recognition before you begin. "
-      );
+      ? "I will quickly confirm your starting position using your saved personal range."
+      : "Let’s personalize movement recognition before you begin.";
     const spoken = speakCalibrationGuidance(
-      introduction
-      + `${startInstruction} Hold still after this instruction. I will measure automatically and tell you when to move.`,
+      localizedGuidanceParts([
+        cameraReadyPositioning,
+        introduction,
+        startInstruction,
+        "Hold still after this instruction. I will measure automatically and tell you when to move.",
+      ]),
       {
         key: `calibration:${engine.exercise.id}:start`,
         interrupt: true,
@@ -4634,9 +4674,11 @@ function announceCalibrationStage(
   const targetInstruction = config.targetInstruction
     ?? `Move into a comfortable ${config.targetPhase.replaceAll("_", " ")} position.`;
   const spoken = speakCalibrationGuidance(
-    `${afterReturn ? "Starting position found. " : "Starting position saved. "}`
-    + `${targetInstruction} This is your only calibration movement. Hold the position; `
-    + "I will measure automatically.",
+    localizedGuidanceParts([
+      afterReturn ? "Starting position found." : "Starting position saved.",
+      targetInstruction,
+      "This is your only calibration movement. Hold the position; I will measure automatically.",
+    ]),
     {
       key: `calibration:${engine.exercise.id}:target:${calibrationSession.targetCaptures.length + 1}:${afterReturn ? "return" : "first"}`,
       interrupt: true,
@@ -4874,20 +4916,20 @@ function hasPathwayAccess() {
 
 function announceExerciseInstruction(prefix = "", { onEnd = null } = {}) {
   const clinicianNote = activeDose(engine.exercise).notes;
-  const spokenInstruction = [
+  const spokenInstruction = localizedGuidanceParts([
     prefix,
     exerciseTargetGuidance(engine.exercise),
     clinicianNote ? `Your clinician's instruction is: ${clinicianNote}` : "",
     handsFreeVoiceEnabled
-      ? (
-        "After this instruction, say Hey Guide followed by your question whenever you need help. "
-        + "To pause for a rest without returning to your device, say Hey Guide, I need a rest."
-      )
+      ? "After this instruction, say Hey Guide followed by your question whenever you need help."
+      : "",
+    handsFreeVoiceEnabled
+      ? "To pause for a rest without returning to your device, say Hey Guide, I need a rest."
       : "",
     // Put the movement instruction last so its final words, "Begin now", are
     // the signal that counting is becoming active.
     exerciseStartGuidance(engine.exercise),
-  ].filter(Boolean).join(" ");
+  ]);
   setMovementAiStatus(
     "coaching",
     engine.exercise.id === "half-squats"
@@ -5169,6 +5211,11 @@ window.addEventListener("pageshow", (event) => {
 function clearSessionMeasurements() {
   Object.keys(sessionAngleStats).forEach(k => delete sessionAngleStats[k]);
   sessionCoachingQuality.reset();
+  sessionCoachingQuality.configureRules(engine?.exercise?.cues ?? {});
+  sessionTrackingStats.totalFrames = 0;
+  sessionTrackingStats.assessableFrames = 0;
+  sessionTrackingStats.limitedTrackingFrames = 0;
+  sessionTrackingStats.missingMeasurements = {};
 }
 
 function resetSetProgress() {
@@ -5253,6 +5300,16 @@ function completeExerciseSession({ stopReason = pendingEarlyStopReason } = {}) {
   const dose = activeDose(ex);
   sessionCoachingQuality.finish(totalRepsCompleted);
   const cuesTriggered = sessionCoachingQuality.cuesForPersistence();
+  const assessmentSummary = buildSessionAssessmentSummary({
+    cuesTriggered,
+    repetitionsCompleted: totalRepsCompleted,
+    repetitionsMinimum: progress.repetitionsMinimum ?? dose.reps ?? 0,
+    repetitionsTarget: dose.reps ?? totalRepsCompleted,
+    setsCompleted: totalSetsCompleted,
+    setsTarget: progress.setsTarget ?? dose.sets ?? 1,
+    tracking: sessionTrackingStats,
+    stopReason: EARLY_STOP_REASONS.has(stopReason) ? stopReason : "",
+  });
   const angleSummaries = {};
   Object.entries(sessionAngleStats).forEach(([key, s]) => {
     if (s.count > 0) {
@@ -5280,12 +5337,10 @@ function completeExerciseSession({ stopReason = pendingEarlyStopReason } = {}) {
     // Symmetry is coached through the same reminder flow when it is reliable;
     // it is not a second, hidden deduction path.
     symmetry_warnings_count: 0,
+    low_confidence_frames_pct:
+      assessmentSummary.tracking_validity.low_confidence_frames_pct,
     angle_summaries:         angleSummaries,
-    quality_score:           calculateMovementQuality({
-      cuesTriggered,
-      symmetryWarnings: 0,
-      repetitions: totalRepsCompleted,
-    }),
+    assessment_summary:      assessmentSummary,
     notes:                   serializePlannedSessionNote({
       sessionKey: activeSessionKey,
       sessionDay: activeSessionDay,
@@ -5357,6 +5412,7 @@ const sessionSummaryModalEl = document.getElementById("session-summary-modal");
 const sessionSummaryTitleEl = document.getElementById("sessionSummaryTitle");
 const sessionSummaryScopeEl = document.getElementById("sessionSummaryScope");
 const sessionSummaryCompletedEl = document.getElementById("sessionSummaryCompleted");
+const sessionSummaryTrackingEl = document.getElementById("sessionSummaryTracking");
 const sessionSummaryQualityEl = document.getElementById("sessionSummaryQuality");
 const sessionSummaryPainEl = document.getElementById("sessionSummaryPain");
 const sessionSummaryRecoveryEl = document.getElementById("sessionSummaryRecovery");
@@ -6216,13 +6272,19 @@ function openSessionSummary(completed, beforePain) {
       : repetitionsMinimum < repetitionsTarget
         ? `${repetitionsCompleted} repetitions · assigned ${assignedRepetitionLabel}`
         : `${repetitionsCompleted} of ${repetitionsTarget} repetitions`;
-  sessionSummaryQualityEl.textContent = (
-    snapshot.quality_score !== null
-    && snapshot.quality_score !== undefined
-    && Number.isFinite(Number(snapshot.quality_score))
-  )
-    ? `${Math.round(Number(snapshot.quality_score))}/100`
-    : "Not enough measured movement";
+  const trackingAssessment = snapshot.assessment_summary?.tracking_validity;
+  const movementAssessment = snapshot.assessment_summary?.movement_execution;
+  sessionSummaryTrackingEl.textContent = {
+    assessable: "Assessable",
+    partially_assessable: "Partly assessable",
+    unable_to_assess: "Unable to assess",
+  }[trackingAssessment?.status] ?? "Not recorded";
+  sessionSummaryQualityEl.textContent = movementAssessment?.status === "assessed"
+    && Number.isFinite(Number(movementAssessment.score))
+    ? `${Math.round(Number(movementAssessment.score))}/100 coaching response`
+    : movementAssessment?.status === "not_clinically_scored"
+      ? "Not clinically scored"
+      : "Unable to assess";
   sessionSummaryPainEl.textContent = painResponseLabel(
     beforePain,
     completed.painLevel,
@@ -6257,13 +6319,37 @@ function mostFrequentSessionCue(snapshot = {}) {
 }
 
 function renderCoachingScoreExplanation(snapshot = {}) {
+  const movementAssessment = snapshot.assessment_summary?.movement_execution;
+  const observations = (snapshot.cues_triggered ?? []).filter(
+    (cue) => cue?.kind === "movement_observation",
+  );
   const records = (snapshot.cues_triggered ?? []).filter(
     (cue) => cue?.kind === "coaching_reminder" && cue?.delivered,
   );
+  if (movementAssessment?.status === "not_clinically_scored") {
+    const observedItems = observations.map((observation) => {
+      const description = escapeHtml(
+        observation.cue_text || observation.rule_id || "Prototype observation",
+      );
+      const repetitions = Math.max(
+        1,
+        Math.round(Number(observation.trigger_count) || 1),
+      );
+      return `<li>${description} (${repetitions} observed repetition${repetitions === 1 ? "" : "s"}).</li>`;
+    });
+    sessionSummaryCueEl.innerHTML = (
+      "<strong>Movement execution was not clinically scored</strong>"
+      + "<p>The camera rules for this exercise have not yet completed technical validation, clinical validation, and recorded physiotherapist approval. Prototype observations did not deduct points.</p>"
+      + (observedItems.length
+        ? `<ul>${observedItems.join("")}</ul>`
+        : "<p>No prototype movement observation was recorded.</p>")
+    );
+    return;
+  }
   if (!records.length) {
     sessionSummaryCueEl.innerHTML = snapshot.reps_completed > 0
-      ? "<strong>How coaching affected your score</strong><p>No stable, reliable movement correction required a reminder. No points were deducted.</p>"
-      : "<strong>How coaching affected your score</strong><p>No repetitions were measured. Check your camera position before trying again.</p>";
+      ? "<strong>Movement execution</strong><p>No validation-gated correction required a reminder.</p>"
+      : "<strong>Movement execution</strong><p>No assessable repetitions were captured. Check the tracking-validity result before trying again.</p>";
     return;
   }
 
@@ -6294,7 +6380,7 @@ function renderCoachingScoreExplanation(snapshot = {}) {
     );
   });
   sessionSummaryCueEl.innerHTML = (
-    "<strong>How coaching affected your score</strong>"
+    "<strong>How validation-gated coaching affected the score</strong>"
     + `<ul>${items.join("")}</ul>`
   );
 }
@@ -6333,7 +6419,10 @@ async function finalizeSessionSummary(completed, beforePain, painSavePromise) {
           plannedSessions.map((item) => String(item.exercise ?? "")).filter(Boolean)
         );
         const qualityScores = plannedSessions
-          .map((item) => Number(item.quality_score))
+          .filter((item) => (
+            item.assessment_summary?.movement_execution?.status === "assessed"
+          ))
+          .map((item) => Number(item.assessment_summary.movement_execution.score))
           .filter((score) => Number.isFinite(score));
         sessionSummaryCompletedEl.textContent =
           `${completedExercises.size} of ${progress.totalExercises} exercises`;
@@ -6353,7 +6442,7 @@ async function finalizeSessionSummary(completed, beforePain, painSavePromise) {
 
   const snapshot = completedExerciseSessionSnapshot ?? {};
   const usesCoachingFirstScore = (snapshot.cues_triggered ?? []).some(
-    (cue) => Number(cue?.scoring_version) === 2,
+    (cue) => Number(cue?.scoring_version) >= 2,
   );
   if (usesCoachingFirstScore) {
     renderCoachingScoreExplanation(snapshot);
@@ -6398,7 +6487,7 @@ async function finalizeSessionSummary(completed, beforePain, painSavePromise) {
 
   announceSavedExerciseSession(session);
   speakMovementGuide(
-    "Your session summary is ready. Review your movement quality, pain response, and recovery before continuing.",
+    "Your session summary is ready. Review tracking validity, movement execution, pain response, and recovery before continuing.",
     { key: `session-summary:${session?.id ?? "unsaved"}`, interrupt: true },
   );
 }

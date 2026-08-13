@@ -1,7 +1,7 @@
 import {
   getSpeechLocale,
   translateText,
-} from "./i18n.js?v=35";
+} from "./i18n.js?v=37";
 import { generateGuidanceSpeech } from "./api.js?v=32";
 
 const VOICE_PREFERENCE_KEY = "physiovision.voice.enabled.v1";
@@ -1616,7 +1616,9 @@ export class VoiceGuidance {
             this.activeRecognition = null;
           }
           onStatus?.(
-            "I didn’t hear an answer. Listening again — speak normally near your device."
+            translateText(
+              "I didn’t hear an answer. Listening again — speak normally near your device."
+            )
           );
           schedule(startAttempt, Math.max(0, Number(retryDelayMs) || 0));
           return;
@@ -1631,9 +1633,9 @@ export class VoiceGuidance {
       recognition.addEventListener("start", () => {
         if (!isCurrentSession()) return;
         onStatus?.(
-          retryCount > 0
+          translateText(retryCount > 0
             ? "Listening again… Speak normally near your device."
-            : "Listening… Speak normally near your device."
+            : "Listening… Speak normally near your device.")
         );
       });
       recognition.addEventListener("result", (event) => {
@@ -1646,8 +1648,10 @@ export class VoiceGuidance {
         if (!result.isFinal) {
           onStatus?.(
             pendingTranscript
-              ? `I can hear you: “${pendingTranscript}” — keep speaking.`
-              : "Listening… Speak normally near your device."
+              ? translateText(
+                `I can hear you: “${pendingTranscript}” — keep speaking.`
+              )
+              : translateText("Listening… Speak normally near your device.")
           );
           const silenceMs = Math.max(0, Number(interimSilenceMs) || 0);
           if (pendingTranscript && silenceMs > 0) {

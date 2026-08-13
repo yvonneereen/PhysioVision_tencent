@@ -114,6 +114,34 @@ assert.equal(
 }
 
 {
+  const engine = new FeedbackEngine("half-squats", "right", {
+    version: 1,
+    exerciseId: "half-squats",
+    affectedSide: "right",
+    phaseRanges: {
+      standing: { knee: [160, 180] },
+      squat: { knee: [118, 142] },
+    },
+  });
+  engine.update(halfSquatPose(), 0);
+  engine.update(halfSquatPose(), 400);
+  const outsidePersonalTarget = halfSquatPose({
+    leftKnee: visible(150),
+    rightKnee: visible(150),
+  });
+  assert.equal(
+    engine.update(outsidePersonalTarget, 800).detectedPhase,
+    null,
+    "an active calibration must replace the generic squat target range",
+  );
+  const personalTarget = halfSquatPose({
+    leftKnee: visible(130),
+    rightKnee: visible(130),
+  });
+  assert.equal(engine.update(personalTarget, 900).detectedPhase, "squat");
+}
+
+{
   const engine = new FeedbackEngine("half-squats", "right");
   const result = engine.update(halfSquatPose());
 
@@ -425,7 +453,7 @@ assert.equal(
 
   assert.ok(
     kneeForward.cues.includes(
-      "Make the squat a little shallower. Keep your whole foot flat and move your hips back as if sitting"
+      "The camera observed forward knee movement relative to the foot. This is an observation only; follow your prescribed technique."
     )
   );
   assert.equal(
@@ -433,17 +461,35 @@ assert.equal(
     false,
     "front-camera knee-forward depth can guide but must not lower quality",
   );
+  assert.deepEqual(
+    torsoLean.cues,
+    [],
+    "torso lean must not be judged against one universal angle",
+  );
+  assert.deepEqual(
+    multipleProblems.cues,
+    [],
+    "squat depth below 90 degrees must not be treated as universally wrong",
+  );
+  assert.equal(kneeForward.cueDetails[0].scoringEligible, false);
+  assert.equal(
+    kneeForward.cueDetails[0].ruleCard.validationStatus,
+    "unvalidated",
+  );
+}
+
+{
+  const engine = new FeedbackEngine("half-squats", "right");
+  const unequalBending = engine.update(halfSquatPose({
+    leftKnee: visible(130),
+    rightKnee: visible(170),
+  }));
   assert.ok(
-    torsoLean.cues.includes(
-      "Move your hips back and bring your chest comfortably upright"
+    unequalBending.cues.includes(
+      "The camera observed different knee-bending angles. This does not assess knee-to-toe alignment."
     )
   );
-  assert.equal(
-    torsoLean.cueDetails[0].qualityReliable,
-    true,
-    "a reliable torso correction can enter the coaching response flow",
-  );
-  assert.equal(multipleProblems.cues.length, 1);
+  assert.equal(unequalBending.cueDetails[0].scoringEligible, false);
 }
 
 {

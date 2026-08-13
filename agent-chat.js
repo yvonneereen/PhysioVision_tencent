@@ -3,7 +3,7 @@ import {
   isLoggedIn,
   sendAgentMessage,
 } from "./api.js?v=32";
-import { voiceGuidance } from "./voice-guidance.js?v=44";
+import { voiceGuidance } from "./voice-guidance.js?v=45";
 
 const launcher = document.getElementById("agentChatLauncher");
 const panel = document.getElementById("agentChatPanel");

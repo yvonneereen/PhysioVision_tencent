@@ -14,7 +14,8 @@ class Session(TimestampedModel):
     One session = one patient performing one exercise in one sitting.
 
     duration_seconds is derived from ended_at - started_at and stored for fast aggregation.
-    quality_score is populated asynchronously after the session ends.
+    quality_score is nullable and may only be populated by a server-approved,
+    validation-gated coaching rule set after the session ends.
     cues_triggered stores [{cue_text, trigger_count}] matching FeedbackEngine output.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -100,6 +101,15 @@ class Session(TimestampedModel):
         default=dict,
         blank=True,
         help_text="{angleName: {min: float, max: float, mean: float}} — per-session angle stats for trend tracking",
+    )
+    assessment_summary = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text=(
+            "Separate tracking validity, prescription completion, "
+            "validation-gated movement execution, and patient-reported "
+            "symptoms/safety outputs."
+        ),
     )
     symmetry_warnings_count   = models.PositiveSmallIntegerField(default=0)
     low_confidence_frames_pct = models.DecimalField(

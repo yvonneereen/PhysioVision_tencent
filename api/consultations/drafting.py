@@ -67,8 +67,14 @@ def build_consultation_facts(patient):
                 'pain_level': session.pain_level,
                 'quality_score': (
                     float(session.quality_score)
-                    if session.quality_score is not None else None
+                    if (
+                        session.quality_score is not None
+                        and session.assessment_summary.get(
+                            'movement_execution', {}
+                        ).get('status') == 'assessed'
+                    ) else None
                 ),
+                'movement_assessment': session.assessment_summary or None,
                 'low_confidence_frames_pct': (
                     float(session.low_confidence_frames_pct)
                     if session.low_confidence_frames_pct is not None else None

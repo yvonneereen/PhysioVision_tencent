@@ -248,18 +248,36 @@ async function showPatientDetail(patientId) {
     const messages = (Array.isArray(msgRaw) ? msgRaw : msgRaw.results ?? []);
 
     const recent = [...sessions].reverse();       // oldest → newest
-    const qSpark = sparkline(recent.map(s => s.quality_score), 0, 100);
+    const qSpark = sparkline(recent.map((session) => (
+      session.assessment_summary?.movement_execution?.status === "assessed"
+        ? session.assessment_summary.movement_execution.score
+        : null
+    )), 0, 100);
     const pSpark = sparkline(recent.map(s => s.pain_level), 0, 10);
     const { label, cls } = statusText(patient);
 
-    const sessionRows = sessions.slice(0, 8).map(s => `
-      <div class="detail-row">
-        <span>${escapeHtml(s.exercise_name || s.exercise || "Exercise")}</span>
-        <span>${new Date(s.started_at).toLocaleDateString()}</span>
-        <span>${s.reps_completed}/${s.reps_minimum || s.reps_target} minimum reps</span>
-        <span>Q ${s.quality_score ?? "—"}</span>
-        <span>${sessionStopReason(s) ? `Stopped: ${escapeHtml(sessionStopReason(s))}` : painBadge(s.pain_level)}</span>
-      </div>`).join("") || `<p class="empty-state">No sessions logged.</p>`;
+    const sessionRows = sessions.slice(0, 8).map((s) => {
+      const assessment = s.assessment_summary ?? {};
+      const tracking = {
+        assessable: "Tracking assessable",
+        partially_assessable: "Tracking partly assessable",
+        unable_to_assess: "Tracking unable to assess",
+      }[assessment.tracking_validity?.status] ?? "Tracking not recorded";
+      const execution = assessment.movement_execution?.status === "assessed"
+        ? `Coaching response ${assessment.movement_execution.score}/100`
+        : assessment.movement_execution?.status === "not_clinically_scored"
+          ? "Execution not clinically scored"
+          : "Execution unable to assess";
+      return `
+        <div class="detail-row">
+          <span>${escapeHtml(s.exercise_name || s.exercise || "Exercise")}</span>
+          <span>${new Date(s.started_at).toLocaleDateString()}</span>
+          <span>${s.reps_completed}/${s.reps_minimum || s.reps_target} minimum reps</span>
+          <span>${escapeHtml(tracking)}</span>
+          <span>${escapeHtml(execution)}</span>
+          <span>${sessionStopReason(s) ? `Stopped: ${escapeHtml(sessionStopReason(s))}` : painBadge(s.pain_level)}</span>
+        </div>`;
+    }).join("") || `<p class="empty-state">No sessions logged.</p>`;
 
     const painRows = pains.slice(0, 5).map(p => `
       <div class="detail-row">
@@ -302,7 +320,7 @@ async function showPatientDetail(patientId) {
         <p class="discharge-error" id="discharge-error" hidden></p>
       </form>
       <div class="detail-metrics">
-        <div><span>Quality trend</span><code>${qSpark}</code></div>
+        <div><span>Validated coaching-response trend</span><code>${qSpark}</code></div>
         <div><span>Pain trend</span><code>${pSpark}</code></div>
         <div><span>Adherence</span><strong>${patient.adherence_pct ?? "—"}%</strong></div>
         <div><span>Programme</span><small>${rx}</small></div>
@@ -894,8 +912,8 @@ function renderTriageEvidence(patient) {
     : `<div class="triage-evidence-empty ${statusClass}">
         <strong>${summary.evidence_status === "limited_data" ? "Reason needs confirming" : "Patient still requested a professional review"}</strong>
         <span>${summary.evidence_status === "limited_data"
-          ? "No recent pain, recovery, movement-quality, or safety record is available. Confirm the patient's reason directly before deciding."
-          : "Available records do not currently show worsening pain, recovery, movement quality, or an open safety flag. This does not rule out a problem the patient has not recorded."}</span>
+          ? "No recent pain, recovery, validation-gated coaching-response, or safety record is available. Confirm the patient's reason directly before deciding."
+          : "Available records do not currently show worsening pain, recovery, validated coaching response, or an open safety flag. This does not rule out a problem the patient has not recorded."}</span>
       </div>`;
 
   return `
@@ -915,7 +933,7 @@ function renderTriageEvidence(patient) {
           pain?.value >= 7 || pain?.trend === "rising" ? "needs-attention" : "",
         )}
         ${triageMetric(
-          "Movement quality",
+          "Validated coaching response",
           quality ? `${quality.value}/100` : "Not recorded",
           qualityDetail,
           quality?.trend === "declining" || quality?.low_sessions >= 2 ? "needs-attention" : "",

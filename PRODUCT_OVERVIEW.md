@@ -11,9 +11,15 @@ Home rehab has two failure modes: patients do exercises **wrong** (or stop doing
 ## Two experiences
 
 ### Patient app
-- **Camera-guided exercises** — MediaPipe pose detection tracks joint angles, counts reps, detects movement phases, and gives live coaching cues ("keep your feet together", "great alignment").
+- **Camera-guided exercises** — MediaPipe pose detection tracks joint angles,
+  counts reps, and detects movement phases. Corrections are delivered only by
+  validation-gated rule versions; prototype detections are observations only.
 - **Personal calibration** — instead of one-size-fits-all thresholds, it measures each person's *comfortable* range so tracking adapts to them.
-- **Movement-quality score** — each session gets a 0–100 score derived from form faults per rep, feeding a trend chart.
+- **Separate session evidence** — tracking validity, prescription completion,
+  movement execution, and patient-reported symptoms/safety are stored
+  separately. A 0–100 camera coaching-response score is nullable and requires
+  technical validation, clinical validation, and recorded physiotherapist
+  approval for every contributing rule.
 - **Pain check-ins** — quick before/after pain diary; a safety screen gates self-guided wellness.
 - **Two care pathways:**
   - **Wellness** — self-guided, AI-assisted general movement for lower-risk users.

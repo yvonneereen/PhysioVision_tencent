@@ -795,6 +795,16 @@ assert.match(
   "calibration speech should start immediately and keep one consistent voice"
 );
 assert.match(
+  functionSource("announceCalibrationStage", "cancelCalibration"),
+  /localizedGuidanceParts\(\[[\s\S]*?cameraReadyPositioning[\s\S]*?introduction[\s\S]*?startInstruction[\s\S]*?Hold still after this instruction/,
+  "calibration should translate every spoken segment without shortening the instruction"
+);
+assert.match(
+  functionSource("renderCalibrationStep", "beginCalibrationCapture"),
+  /setTranslatableTextParts\([\s\S]*?Your saved personalized movement range will be reused[\s\S]*?startInstruction[\s\S]*?Measurement starts automatically/,
+  "the visible calibration explanation should preserve and translate the same instruction parts"
+);
+assert.match(
   source,
   /announceCalibrationStage\("start", \{[\s\S]*?onEnd:[\s\S]*?beginCalibrationCapture\("start"/,
   "calibration measurement should wait until the complete opening instruction finishes"
@@ -1378,7 +1388,7 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /How coaching affected your score[\s\S]*?No deduction:/,
+  /No deduction:[\s\S]*?How validation-gated coaching affected the score/,
   "the session summary should explain why a reminder caused no deduction",
 );
 assert.match(

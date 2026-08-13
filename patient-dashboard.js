@@ -25,11 +25,11 @@ import {
   mergeConsultationTranscript,
   shouldShowPhysiotherapistRequest,
   walkingConfidencePlanNeedsRefresh,
-} from "./patient-dashboard-state.js?v=13";
+} from "./patient-dashboard-state.js?v=14";
 import { saveProfile } from "./personalization.js?v=13";
-import { getLocale, translateText } from "./i18n.js?v=35";
-import { voiceGuidance } from "./voice-guidance.js?v=44";
-import { EXERCISE_MAP } from "./exercises/registry.js?v=61";
+import { getLocale, translateText } from "./i18n.js?v=37";
+import { voiceGuidance } from "./voice-guidance.js?v=45";
+import { EXERCISE_MAP } from "./exercises/registry.js?v=62";
 import {
   buildPlannedSessionKey,
   completedExerciseIdsForPlannedSession,
@@ -799,11 +799,11 @@ function renderTrendChart(series) {
   trendChart.innerHTML = "";
   if (!series.length) {
     const empty = document.createElement("p");
-    empty.textContent = "No measured quality scores yet.";
+    empty.textContent = "No validation-gated coaching-response scores yet.";
     trendChart.appendChild(empty);
     trendChart.setAttribute(
       "aria-label",
-      "No movement-quality trend is available yet",
+      "No validated coaching-response trend is available yet",
     );
     return;
   }
@@ -816,7 +816,7 @@ function renderTrendChart(series) {
   });
   trendChart.setAttribute(
     "aria-label",
-    `Movement-quality scores from oldest to newest: ${series
+    `Validated coaching-response scores from oldest to newest: ${series
       .map((value) => Math.round(value))
       .join(", ")}`,
   );
