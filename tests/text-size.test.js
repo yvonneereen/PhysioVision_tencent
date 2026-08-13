@@ -53,8 +53,9 @@ assert.match(css, /html\[data-text-size="large"\]\s*\{\s*font-size:\s*1\.25rem/)
 assert.match(css, /html\[data-text-size="extra-large"\]\s*\{\s*font-size:\s*1\.5rem/);
 assert.match(css, /body\s*\{[\s\S]*?font-size:\s*1\.125rem;[\s\S]*?line-height:\s*1\.55;/);
 assert.match(css, /\.rx-form select, \.rx-form input\s*\{[\s\S]*?width:\s*100%;[\s\S]*?min-width:\s*0;[\s\S]*?max-width:\s*100%;/);
-assert.match(css, /\.rx-row\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\);[\s\S]*?min-width:\s*0;/);
-assert.match(css, /\.rx-row label\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?overflow-wrap:\s*anywhere;/);
+assert.match(css, /\.rx-row\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 0\.85fr\) minmax\(0, 0\.85fr\) minmax\(0, 1\.3fr\);[\s\S]*?min-width:\s*0;/);
+assert.match(css, /\.rx-row label\s*\{[\s\S]*?min-width:\s*0;/);
+assert.match(css, /\.rx-row label > span\s*\{[\s\S]*?white-space:\s*nowrap;/);
 assert.doesNotMatch(css, /font-size:[^;]*px/, "font sizes should use scalable units");
 assert.doesNotMatch(css, /font-size:\s*0\.[0-9]+rem/, "secondary text must not be below 16px at the standard setting");
 assert.equal((html.match(/data-text-size-selector/g) ?? []).length, 2);
