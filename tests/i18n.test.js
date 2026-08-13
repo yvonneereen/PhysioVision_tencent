@@ -23,7 +23,7 @@ assert.ok(
 );
 assert.deepEqual(
   [...new Set(i18nCacheVersions)],
-  ["38"],
+  ["39"],
   "all browser entry points must use one i18n URL so only one DOM observer is created"
 );
 
@@ -73,7 +73,7 @@ const voiceCacheVersions = voiceConsumerSources.flatMap((source) =>
 );
 assert.deepEqual(
   [...new Set(voiceCacheVersions)],
-  ["45"],
+  ["46"],
   "all voice consumers must share one voice-guidance module instance"
 );
 
@@ -138,7 +138,12 @@ for (const locale of ["zh-SG", "ms-SG", "ta-SG"]) {
     "You said yes. The exercise is marked finished and your check-in is ready.",
     "Rep 10. You’re done with Half Squats. Your next exercise is Calf Raises.",
     "To pause for a rest without returning to your device, say Hey Guide, I need a rest.",
-    "Your camera guide is paused for a rest. Your recognized repetitions are kept. Select Resume camera guide when you are ready to continue.",
+    "Your camera guide is paused for a rest. Your recognized repetitions are kept. When you are ready, say Hey Guide, continue, or select Resume camera guide.",
+    "Okay. Resuming your camera guide. Your repetitions are still saved.",
+    "Your exercise and check-in are saved.",
+    "Would you like to continue to",
+    "Say yes or no.",
+    "Please say yes to continue to the next exercise, or no to finish for now.",
     "Camera tracking and AI questions are active together. Say “Hey Guide” to ask something, or say “Hey Guide, I need a rest” to pause. Choose Finish exercise and check in when done.",
     "Your saved personalized movement range will be reused. This quick 2–3 second check confirms that you are visible and in the correct starting position.",
     "Move into the standing position shown by the guide and keep every required joint visible.",

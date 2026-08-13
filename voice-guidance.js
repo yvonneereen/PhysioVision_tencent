@@ -1,7 +1,7 @@
 import {
   getSpeechLocale,
   translateText,
-} from "./i18n.js?v=38";
+} from "./i18n.js?v=39";
 import { generateGuidanceSpeech } from "./api.js?v=35";
 
 const VOICE_PREFERENCE_KEY = "physiovision.voice.enabled.v1";
@@ -336,6 +336,21 @@ export function isMovementRestRequest(transcript) {
 
   return englishRequest.test(normalized)
     || englishPause.test(normalized)
+    || chineseRequest.test(normalized)
+    || malayRequest.test(normalized)
+    || tamilRequest.test(normalized);
+}
+
+export function isMovementResumeRequest(transcript) {
+  const normalized = normalizeSpeech(transcript).trim();
+  if (!normalized) return false;
+
+  const englishRequest = /^(?:please\s+)?(?:(?:continue|resume)(?:\s+(?:the|this|my))?(?:\s+(?:camera|movement|exercise))?(?:\s+guide)?|start(?:\s+(?:the|this|my))?(?:\s+(?:camera|movement|exercise))?(?:\s+guide)?\s+again|i(?:'m|\s+am)\s+ready(?:\s+to\s+(?:continue|resume))?)(?:\s+(?:now|please))?$/;
+  const chineseRequest = /^(?:继续(?:运动|锻炼|摄像头指导)?|恢复(?:运动|锻炼|摄像头指导)?|我准备好了|可以继续了)$/u;
+  const malayRequest = /^(?:teruskan|sambung(?:\s+(?:panduan\s+kamera|senaman))?|saya\s+(?:sudah|dah)\s+bersedia)$/u;
+  const tamilRequest = /^(?:தொடரவும்|மீண்டும்\s+தொடங்கவும்|கேமரா\s+வழிகாட்டியைத்\s+தொடரவும்|நான்\s+தயார்)$/u;
+
+  return englishRequest.test(normalized)
     || chineseRequest.test(normalized)
     || malayRequest.test(normalized)
     || tamilRequest.test(normalized);

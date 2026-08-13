@@ -162,9 +162,36 @@ assert.equal(
 );
 assert.equal(
   standaloneSafetyPainIsVisibleButExcludedFromExerciseTrend.reason,
-  null,
-  "a standalone check-in must not be treated as a completed exercise pain-response trend",
+  "high_pain",
+  "a high standalone safety check must independently request review",
 );
+assert.equal(
+  standaloneSafetyPainIsVisibleButExcludedFromExerciseTrend.status,
+  "review_suggested",
+);
+assert.deepEqual(
+  standaloneSafetyPainIsVisibleButExcludedFromExerciseTrend.painResponseSeries,
+  [],
+  "a standalone check-in must remain excluded from exercise pain-response trends",
+);
+
+const highPainBoundary = analysePatientTrend({
+  painCheckins: [{ checked_at: dates[0], pain_level: 7 }],
+  escalations: [{
+    status: "open",
+    trigger_type: "quality_decline",
+    description: "A different review flag.",
+    created_at: dates[0],
+  }],
+});
+assert.equal(highPainBoundary.reason, "high_pain");
+assert.equal(highPainBoundary.status, "review_suggested");
+
+const belowHighPainBoundary = analysePatientTrend({
+  painCheckins: [{ checked_at: dates[0], pain_level: 6 }],
+});
+assert.equal(belowHighPainBoundary.status, "building_baseline");
+assert.equal(belowHighPainBoundary.reason, null);
 
 const firstRealMeasurement = analysePatientTrend({
   sessions: [session(0, { quality_score: 82 })],

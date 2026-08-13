@@ -284,6 +284,34 @@ assert.doesNotMatch(
   /resetExerciseProgressForNewSession|discardExerciseSession|completeExerciseSession/,
   "a vocal rest must preserve recognized repetitions and leave the exercise unfinished"
 );
+assert.match(
+  voiceRestSource,
+  /say Hey Guide, continue[\s\S]*?scheduleRestResumeVoiceListening/,
+  "a vocal rest should tell the user how to resume without returning to the device"
+);
+const voiceRestResumeSource = functionSource(
+  "startRestResumeVoiceListening",
+  "pauseMovementGuideForRest"
+);
+assert.match(
+  voiceRestResumeSource,
+  /parseMovementAiWakePhrase\(transcript, alternatives\)[\s\S]*?isMovementResumeRequest\(wake\.question\)[\s\S]*?resumeMovementGuideAfterRest\(generation\)/,
+  "Hey Guide continue should resume only from the dedicated rest listener"
+);
+const resumeAfterRestSource = functionSource(
+  "resumeMovementGuideAfterRest",
+  "startRestResumeVoiceListening"
+);
+assert.match(
+  resumeAfterRestSource,
+  /activateCameraGuide\(\{ announceInstruction: false \}\)/,
+  "voice resume should reopen the existing camera session without replaying movement instructions"
+);
+assert.doesNotMatch(
+  resumeAfterRestSource,
+  /resetExerciseProgressForNewSession|discardExerciseSession|completeExerciseSession/,
+  "voice resume must not clear repetitions or complete the exercise"
+);
 const answerMovementAiSource = functionSource(
   "answerMovementAiQuestion",
   "startMovementAiWakeListening"

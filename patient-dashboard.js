@@ -25,10 +25,10 @@ import {
   mergeConsultationTranscript,
   shouldShowPhysiotherapistRequest,
   walkingConfidencePlanNeedsRefresh,
-} from "./patient-dashboard-state.js?v=15";
+} from "./patient-dashboard-state.js?v=16";
 import { saveProfile } from "./personalization.js?v=13";
-import { getLocale, translateText } from "./i18n.js?v=38";
-import { voiceGuidance } from "./voice-guidance.js?v=45";
+import { getLocale, translateText } from "./i18n.js?v=39";
+import { voiceGuidance } from "./voice-guidance.js?v=46";
 import { EXERCISE_MAP } from "./exercises/registry.js?v=62";
 import {
   buildPlannedSessionKey,
@@ -861,11 +861,26 @@ function renderTrend(data) {
   const shouldShowAlert = trend.status === "review_suggested";
   trendAlert.classList.toggle("hidden", !shouldShowAlert);
   if (shouldShowAlert) {
-    trendAlertTitle.textContent = isPhysiotherapistPath
+    const isPainWarning = ["high_pain", "pain_increase"].includes(trend.reason);
+    trendAlertTitle.textContent = isPainWarning
       ? trend.title
-      : "Pause your wellness plan and seek professional advice";
+      : isPhysiotherapistPath
+        ? trend.title
+        : "Pause your wellness plan and seek professional advice";
     trendAlertMessage.textContent = trend.message;
-    trendAlertGuidance.textContent = isPhysiotherapistPath
+    trendAlertGuidance.textContent = isPainWarning && isPhysiotherapistPath
+      ? (
+        "Book a consultation with your physiotherapist before continuing. "
+        + "For severe, new, or worsening pain—or chest pain, breathing "
+        + "difficulty, fainting, sudden weakness, or numbness—seek urgent help."
+      )
+      : isPainWarning
+        ? (
+          "Request a physiotherapist before continuing. For severe, new, or "
+          + "worsening pain—or chest pain, breathing difficulty, fainting, "
+          + "sudden weakness, or numbness—seek urgent help."
+        )
+        : isPhysiotherapistPath
       ? (
         "This is a trend prompt, not a diagnosis. Send a consultation "
         + "request if you want your physiotherapist to review this pattern."
@@ -878,6 +893,7 @@ function renderTrend(data) {
     renderTrendConsultationAction(
       data.consultations,
       isPhysiotherapistPath,
+      isPainWarning,
     );
   }
 }
@@ -900,6 +916,7 @@ function describeConsultation(consultation) {
 function renderTrendConsultationAction(
   consultations,
   isPhysiotherapistPath = false,
+  isPainWarning = false,
 ) {
   if (!trendRequestButton || !trendRequestStatus) return;
   const next = findUpcomingConsultation(consultations);
@@ -914,11 +931,15 @@ function renderTrendConsultationAction(
   }
 
   trendRequestButton.disabled = false;
-  trendRequestButton.innerHTML = isPhysiotherapistPath
-    ? 'Ask my physiotherapist to review <span aria-hidden="true">→</span>'
+  trendRequestButton.innerHTML = isPainWarning && isPhysiotherapistPath
+    ? 'Book a consultation <span aria-hidden="true">→</span>'
+    : isPhysiotherapistPath
+      ? 'Ask my physiotherapist to review <span aria-hidden="true">→</span>'
     : 'Request a physiotherapist <span aria-hidden="true">→</span>';
-  trendRequestStatus.textContent = isPhysiotherapistPath
-    ? "Tell your physiotherapist what you would like reviewed. They will propose the appointment time."
+  trendRequestStatus.textContent = isPainWarning && isPhysiotherapistPath
+    ? "Choose a preferred time and tell your physiotherapist about the pain you reported."
+    : isPhysiotherapistPath
+      ? "Tell your physiotherapist what you would like reviewed. They will propose the appointment time."
     : "Tell a physiotherapist what you would like reviewed. They will propose the appointment time.";
 }
 

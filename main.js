@@ -41,11 +41,12 @@ import {
   sendAgentMessage,
   updatePainCheckin,
 } from "./api.js?v=35";
-import { analysePatientTrend } from "./patient-dashboard-state.js?v=15";
+import { analysePatientTrend } from "./patient-dashboard-state.js?v=16";
 import { DRAFT_EXERCISES } from "./exercises/catalog.js?v=3";
-import { translateText } from "./i18n.js?v=38";
+import { translateText } from "./i18n.js?v=39";
 import {
   isMovementRestRequest,
+  isMovementResumeRequest,
   parseConfirmationResponse,
   parseEarlyStopReason,
   parsePainLevel,
@@ -55,7 +56,7 @@ import {
   isSafariBrowser,
   readMicrophonePermissionState,
   voiceGuidance,
-} from "./voice-guidance.js?v=45";
+} from "./voice-guidance.js?v=46";
 import {
   PRACTICE_VIEWS,
   acceptedWellnessPlan,
@@ -407,6 +408,10 @@ let movementAiState = "off";
 let movementCoachingGeneration = 0;
 let movementAiGeneration = 0;
 let movementAiRestartTimer = null;
+let restResumeVoiceGeneration = 0;
+let restResumeVoiceTimer = null;
+let exerciseTransitionVoiceGeneration = 0;
+let exerciseTransitionVoiceTimer = null;
 let movementTrackingPausedForInstruction = false;
 const exerciseContent = new Map(
   DRAFT_EXERCISES.map((exercise) => [exercise.id, exercise])
@@ -1580,6 +1585,130 @@ function beginMovementAiQuestion(question, generation) {
   if (!spoken) captureMovementAiQuestion(generation);
 }
 
+function clearRestResumeVoiceTimer() {
+  if (restResumeVoiceTimer === null) return;
+  window.clearTimeout(restResumeVoiceTimer);
+  restResumeVoiceTimer = null;
+}
+
+function stopRestResumeVoiceListening({ cancelListening = true } = {}) {
+  restResumeVoiceGeneration += 1;
+  clearRestResumeVoiceTimer();
+  if (cancelListening) voiceGuidance.cancelListening();
+}
+
+function restResumeVoiceCanListen(generation) {
+  return Boolean(
+    generation === restResumeVoiceGeneration
+    && !running
+    && exerciseSessionActive
+    && handsFreeVoiceEnabled
+    && voiceGuidance.enabled
+    && voiceGuidance.canListen
+    && !safetyCheckActive
+    && !calibrationSession
+    && !painCheckinState
+  );
+}
+
+function scheduleRestResumeVoiceListening(
+  delayMs = 250,
+  generation = restResumeVoiceGeneration
+) {
+  clearRestResumeVoiceTimer();
+  if (!restResumeVoiceCanListen(generation)) return;
+  restResumeVoiceTimer = window.setTimeout(() => {
+    restResumeVoiceTimer = null;
+    startRestResumeVoiceListening(generation);
+  }, Math.max(0, Number(delayMs) || 0));
+}
+
+function resumeMovementGuideAfterRest(generation) {
+  if (!restResumeVoiceCanListen(generation)) return;
+  voiceGuidance.cancelListening();
+  clearRestResumeVoiceTimer();
+
+  let resumeStarted = false;
+  const resumeGuide = () => {
+    if (
+      resumeStarted
+      || generation !== restResumeVoiceGeneration
+      || running
+      || !exerciseSessionActive
+    ) {
+      return;
+    }
+    resumeStarted = true;
+    void activateCameraGuide({ announceInstruction: false }).then((started) => {
+      if (!started && exerciseSessionActive) {
+        cameraSessionHintEl.textContent = translateText(
+          "The camera could not resume. Select Resume camera guide to try again."
+        );
+      }
+    });
+  };
+  const spoken = speakMovementGuide(
+    "Okay. Resuming your camera guide. Your repetitions are still saved.",
+    {
+      key: `movement-rest:resume:${engine.exercise?.id ?? "exercise"}`,
+      interrupt: true,
+      onEnd: resumeGuide,
+    }
+  );
+  if (!spoken) resumeGuide();
+  else {
+    window.setTimeout(() => {
+      if (!voiceGuidance.isSpeaking) resumeGuide();
+    }, 8000);
+  }
+}
+
+function startRestResumeVoiceListening(generation) {
+  if (!restResumeVoiceCanListen(generation)) return;
+  setMovementAiStatus(
+    "wake",
+    "Resting — say “Hey Guide, continue” when you are ready."
+  );
+  const started = voiceGuidance.listen({
+    maxNoSpeechRetries: 1,
+    interimSilenceMs: 400,
+    onStatus: () => {
+      if (restResumeVoiceCanListen(generation)) {
+        setMovementAiStatus(
+          "wake",
+          "Resting — say “Hey Guide, continue” when you are ready."
+        );
+      }
+    },
+    onResult: (transcript, alternatives = []) => {
+      if (!restResumeVoiceCanListen(generation)) return;
+      const wake = parseMovementAiWakePhrase(transcript, alternatives);
+      if (wake.matched && isMovementResumeRequest(wake.question)) {
+        resumeMovementGuideAfterRest(generation);
+        return;
+      }
+      scheduleRestResumeVoiceListening(250, generation);
+    },
+    onError: (_message, errorCode) => {
+      if (!restResumeVoiceCanListen(generation)) return;
+      if (MOVEMENT_AI_TRANSIENT_LISTENING_ERRORS.has(errorCode)) {
+        scheduleRestResumeVoiceListening(500, generation);
+        return;
+      }
+      setMovementAiStatus(
+        "error",
+        "Voice resume is unavailable. Select Resume camera guide when you are ready."
+      );
+    },
+  });
+  if (!started && restResumeVoiceCanListen(generation)) {
+    setMovementAiStatus(
+      "error",
+      "Voice resume is unavailable. Select Resume camera guide when you are ready."
+    );
+  }
+}
+
 async function pauseMovementGuideForRest() {
   if (!running || !exerciseSessionActive) return false;
 
@@ -1590,13 +1719,31 @@ async function pauseMovementGuideForRest() {
   await voiceGuidance.prepareSpeechAfterMicrophoneRelease();
   if (running || !exerciseSessionActive) return true;
 
-  speakMovementGuide(
-    "Your camera guide is paused for a rest. Your recognized repetitions are kept. Select Resume camera guide when you are ready to continue.",
+  stopRestResumeVoiceListening({ cancelListening: true });
+  const generation = restResumeVoiceGeneration;
+  const prompt =
+    "Your camera guide is paused for a rest. Your recognized repetitions are kept. When you are ready, say Hey Guide, continue, or select Resume camera guide.";
+  cameraSessionHintEl.textContent = translateText(prompt);
+  let listeningStarted = false;
+  const beginListening = () => {
+    if (listeningStarted) return;
+    listeningStarted = true;
+    scheduleRestResumeVoiceListening(100, generation);
+  };
+  const spoken = speakMovementGuide(
+    prompt,
     {
       key: `movement-rest:paused:${engine.exercise?.id ?? "exercise"}`,
       interrupt: true,
+      onEnd: beginListening,
     }
   );
+  if (!spoken) beginListening();
+  else {
+    window.setTimeout(() => {
+      if (!voiceGuidance.isSpeaking) beginListening();
+    }, 12000);
+  }
   return true;
 }
 
@@ -4979,6 +5126,7 @@ function setIntegratedCameraGuideActive(active) {
 
 async function activateCameraGuide({ announceInstruction = true } = {}) {
   if (running) return true;
+  stopRestResumeVoiceListening({ cancelListening: true });
   if (!(await ensureVoiceModeChosen())) return false;
   if (!hasPathwayAccess()) return false;
   await ensureMovementModels();
@@ -5069,6 +5217,7 @@ async function activateCameraGuide({ announceInstruction = true } = {}) {
 function deactivateCameraGuide({
   statusMessage = "Camera paused — exercise not marked finished",
 } = {}) {
+  stopRestResumeVoiceListening({ cancelListening: true });
   const defaultPause = statusMessage
     === "Camera paused — exercise not marked finished";
   const pauseMetric = goalMetric(engine.exercise);
@@ -5270,6 +5419,7 @@ function beginExerciseSession() {
 function discardExerciseSession() {
   cancelCameraSetupCountdown({ announce: false });
   clearExerciseCompletionConfirmation({ cancelListening: true });
+  stopRestResumeVoiceListening({ cancelListening: true });
   exerciseSessionActive = false;
   sessionStartedAt = null;
   resetSetProgress();
@@ -6135,6 +6285,7 @@ function plannedSessionProgressAfterCurrent() {
 }
 
 function openExerciseTransition(progress, painLevel) {
+  stopExerciseTransitionVoiceListening({ cancelListening: true });
   const currentExerciseName = exerciseDisplayName(progress.currentExerciseId);
   const nextExerciseName = exerciseDisplayName(progress.nextExerciseId);
   exerciseTransitionNextExerciseId = progress.nextExerciseId;
@@ -6173,10 +6324,181 @@ function openExerciseTransition(progress, painLevel) {
 }
 
 function closeExerciseTransition({ retainPainBaseline = false } = {}) {
+  stopExerciseTransitionVoiceListening({
+    cancelListening: true,
+    cancelSpeech: true,
+  });
   exerciseTransitionModalEl?.classList.remove("is-open");
   exerciseTransitionModalEl?.setAttribute("aria-hidden", "true");
   document.body.classList.remove("modal-open");
   if (!retainPainBaseline) exerciseTransitionPainBaseline = null;
+}
+
+function clearExerciseTransitionVoiceTimer() {
+  if (exerciseTransitionVoiceTimer === null) return;
+  window.clearTimeout(exerciseTransitionVoiceTimer);
+  exerciseTransitionVoiceTimer = null;
+}
+
+function stopExerciseTransitionVoiceListening({
+  cancelListening = true,
+  cancelSpeech = false,
+} = {}) {
+  exerciseTransitionVoiceGeneration += 1;
+  clearExerciseTransitionVoiceTimer();
+  if (cancelListening) voiceGuidance.cancelListening();
+  if (cancelSpeech) voiceGuidance.cancelSpokenOutput();
+}
+
+function exerciseTransitionVoiceCanListen(generation) {
+  return Boolean(
+    generation === exerciseTransitionVoiceGeneration
+    && exerciseTransitionModalEl?.classList.contains("is-open")
+    && exerciseTransitionNextExerciseId
+    && !exerciseTransitionContinueEl.disabled
+    && handsFreeVoiceEnabled
+    && voiceGuidance.enabled
+    && voiceGuidance.canListen
+    && !painCheckinState
+  );
+}
+
+function continueToNextExercise() {
+  if (
+    !exerciseTransitionNextExerciseId
+    || exerciseTransitionContinueEl.disabled
+  ) {
+    return false;
+  }
+  const nextExerciseId = exerciseTransitionNextExerciseId;
+  closeExerciseTransition({ retainPainBaseline: true });
+  exSelect.value = nextExerciseId;
+  exSelect.dispatchEvent(new Event("change", { bubbles: true }));
+  document.getElementById("practice")?.scrollIntoView({
+    behavior: "smooth",
+    block: "start",
+  });
+  return true;
+}
+
+function listenForExerciseTransitionVoice(generation, retriesRemaining = 1) {
+  if (!exerciseTransitionVoiceCanListen(generation)) return;
+  exerciseTransitionStatusEl.textContent = translateText(
+    "Exercise saved · waiting for your answer"
+  );
+  const started = voiceGuidance.listen({
+    maxNoSpeechRetries: 1,
+    interimSilenceMs: 400,
+    onStatus: () => {
+      if (exerciseTransitionVoiceCanListen(generation)) {
+        exerciseTransitionStatusEl.textContent = translateText(
+          "Exercise saved · waiting for your answer"
+        );
+      }
+    },
+    onResult: (transcript) => {
+      if (!exerciseTransitionVoiceCanListen(generation)) return;
+      const response = parseConfirmationResponse(transcript);
+      if (response === "confirm") {
+        continueToNextExercise();
+        return;
+      }
+      if (response === "change") {
+        stopExerciseTransitionVoiceListening({ cancelListening: true });
+        exerciseTransitionStatusEl.textContent = translateText("Exercise saved");
+        speakMovementGuide(
+          "Okay. Your exercise is saved. You can finish for now or use Continue to next exercise when you are ready.",
+          {
+            key: `exercise-transition:declined:${exerciseTransitionNextExerciseId}`,
+            interrupt: true,
+          }
+        );
+        return;
+      }
+      if (retriesRemaining <= 0) {
+        exerciseTransitionStatusEl.textContent = translateText(
+          "Exercise saved · use a button to continue or finish for now"
+        );
+        return;
+      }
+      const retry = translateText(
+        "Please say yes to continue to the next exercise, or no to finish for now."
+      );
+      let listeningStarted = false;
+      const listenAgain = () => {
+        if (listeningStarted) return;
+        listeningStarted = true;
+        listenForExerciseTransitionVoice(generation, retriesRemaining - 1);
+      };
+      const spoken = speakMovementGuide(retry, {
+        key: `exercise-transition:retry:${generation}:${retriesRemaining}`,
+        interrupt: true,
+        onEnd: listenAgain,
+      });
+      if (!spoken) listenAgain();
+      else {
+        window.setTimeout(() => {
+          if (!voiceGuidance.isSpeaking) listenAgain();
+        }, 9000);
+      }
+    },
+    onError: () => {
+      if (!exerciseTransitionVoiceCanListen(generation)) return;
+      exerciseTransitionStatusEl.textContent = translateText(
+        "Exercise saved · use a button to continue or finish for now"
+      );
+    },
+  });
+  if (!started && exerciseTransitionVoiceCanListen(generation)) {
+    exerciseTransitionStatusEl.textContent = translateText(
+      "Exercise saved · use a button to continue or finish for now"
+    );
+  }
+}
+
+function promptForExerciseTransitionVoice({ checkinSaveIncomplete = false } = {}) {
+  if (
+    !exerciseTransitionNextExerciseId
+    || !exerciseTransitionModalEl?.classList.contains("is-open")
+    || exerciseTransitionContinueEl.disabled
+    || !handsFreeVoiceEnabled
+    || !voiceGuidance.enabled
+    || !voiceGuidance.canListen
+  ) {
+    return false;
+  }
+  stopExerciseTransitionVoiceListening({ cancelListening: true });
+  const generation = exerciseTransitionVoiceGeneration;
+  const nextExerciseName = translateText(
+    exerciseDisplayName(exerciseTransitionNextExerciseId)
+  );
+  const question = [
+    checkinSaveIncomplete
+      ? `${translateText("Exercise saved")}.`
+      : translateText("Your exercise and check-in are saved."),
+    `${translateText("Would you like to continue to")} ${nextExerciseName}?`,
+    translateText("Say yes or no."),
+  ].join(" ");
+  exerciseTransitionMessageEl.textContent = question;
+
+  let listeningStarted = false;
+  const beginListening = () => {
+    if (listeningStarted) return;
+    listeningStarted = true;
+    listenForExerciseTransitionVoice(generation);
+  };
+  const spoken = speakMovementGuide(question, {
+    key: `exercise-transition:question:${exerciseTransitionNextExerciseId}`,
+    interrupt: true,
+    onEnd: beginListening,
+  });
+  if (!spoken) beginListening();
+  else {
+    window.setTimeout(() => {
+      if (!voiceGuidance.isSpeaking) beginListening();
+    }, 12000);
+  }
+  return true;
 }
 
 function announceSavedExerciseSession(session) {
@@ -6213,6 +6535,7 @@ async function finalizeExerciseTransition(painSavePromise) {
     : translateText("Exercise saved");
   exerciseTransitionContinueEl.disabled = false;
   exerciseTransitionHomeEl.disabled = false;
+  promptForExerciseTransitionVoice({ checkinSaveIncomplete });
 }
 
 function showPostExerciseDestination(completed, beforePain, painSavePromise) {
@@ -7282,15 +7605,7 @@ exerciseTransitionModalEl
   });
 
 exerciseTransitionContinueEl?.addEventListener("click", () => {
-  if (!exerciseTransitionNextExerciseId) return;
-  const nextExerciseId = exerciseTransitionNextExerciseId;
-  closeExerciseTransition({ retainPainBaseline: true });
-  exSelect.value = nextExerciseId;
-  exSelect.dispatchEvent(new Event("change", { bubbles: true }));
-  document.getElementById("practice")?.scrollIntoView({
-    behavior: "smooth",
-    block: "start",
-  });
+  continueToNextExercise();
 });
 
 exerciseTransitionHomeEl?.addEventListener("click", () => {

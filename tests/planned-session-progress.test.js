@@ -165,8 +165,18 @@ assert.match(
 );
 assert.match(
   mainSource,
-  /exerciseTransitionContinueEl[\s\S]*?exSelect\.value = nextExerciseId[\s\S]*?dispatchEvent\(new Event\("change"/,
+  /function continueToNextExercise\(\)[\s\S]*?exSelect\.value = nextExerciseId[\s\S]*?dispatchEvent\(new Event\("change"/,
   "continuing should open the next exercise without returning home",
+);
+assert.match(
+  mainSource,
+  /function finalizeExerciseTransition[\s\S]*?exerciseTransitionContinueEl\.disabled = false;[\s\S]*?promptForExerciseTransitionVoice\(\{ checkinSaveIncomplete \}\)/,
+  "the voice continuation question should start only after the result has saved",
+);
+assert.match(
+  mainSource,
+  /function listenForExerciseTransitionVoice[\s\S]*?parseConfirmationResponse\(transcript\)[\s\S]*?response === "confirm"[\s\S]*?continueToNextExercise\(\)/,
+  "a spoken yes should continue to the next planned exercise",
 );
 assert.match(
   mainSource,

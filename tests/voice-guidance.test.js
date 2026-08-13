@@ -4,6 +4,7 @@ import {
   browserSpeechWatchdogMs,
   describeMicrophoneAccessFailure,
   isMovementRestRequest,
+  isMovementResumeRequest,
   isSafariBrowser,
   parseConfirmationResponse,
   parseEarlyStopReason,
@@ -124,6 +125,18 @@ assert.equal(
   isMovementRestRequest("How long should I rest between exercises?"),
   false,
   "a question about rest should still go to the AI instead of pausing"
+);
+
+assert.equal(isMovementResumeRequest("Continue"), true);
+assert.equal(isMovementResumeRequest("Resume camera guide"), true);
+assert.equal(isMovementResumeRequest("I'm ready to continue"), true);
+assert.equal(isMovementResumeRequest("继续运动"), true);
+assert.equal(isMovementResumeRequest("Sambung panduan kamera"), true);
+assert.equal(isMovementResumeRequest("தொடரவும்"), true);
+assert.equal(
+  isMovementResumeRequest("How do I continue after a rest?"),
+  false,
+  "a question about continuing should not be mistaken for a resume command"
 );
 
 assert.equal(parseEarlyStopReason("I stopped because of pain"), "pain");

@@ -3,6 +3,7 @@ import { movementQualityFromSession } from "./movement-quality.js?v=4";
 export const PROVISIONAL_TREND_THRESHOLDS = Object.freeze({
   qualityDeclinePoints: 8,
   painIncreasePoints: 2,
+  highPainLevel: 7,
   minimumReadings: 3,
 });
 
@@ -205,6 +206,9 @@ export function analysePatientTrend({
   const painIncreasing =
     painDelta !== null &&
     painDelta >= PROVISIONAL_TREND_THRESHOLDS.painIncreasePoints;
+  const highLatestPain =
+    latestReportedPain !== null
+    && latestReportedPain >= PROVISIONAL_TREND_THRESHOLDS.highPainLevel;
 
   const weekAgo = new Date(now);
   weekAgo.setDate(weekAgo.getDate() - 7);
@@ -219,7 +223,16 @@ export function analysePatientTrend({
   let reason = null;
   let preliminaryDirection = null;
 
-  if (openEscalation) {
+  if (highLatestPain) {
+    // A standalone pre-exercise safety check is not an exercise trend, but a
+    // high latest score still needs an immediate, visible support prompt.
+    status = "review_suggested";
+    title = "High pain was reported";
+    message =
+      `Your latest pain check-in was ${Math.round(latestReportedPain)}/10. `
+      + "Pause exercise and seek professional advice before continuing.";
+    reason = "high_pain";
+  } else if (openEscalation) {
     status = "review_suggested";
     title = "A physiotherapist review is suggested";
     message = openEscalation.description;
