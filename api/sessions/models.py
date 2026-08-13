@@ -48,8 +48,38 @@ class Session(TimestampedModel):
     sets_completed = models.PositiveSmallIntegerField(default=0)
     reps_completed = models.PositiveSmallIntegerField(default=0)
     reps_target    = models.PositiveSmallIntegerField()
+    reps_minimum   = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Minimum repetitions per set that count as completion. "
+            "Falls back to reps_target for older sessions."
+        ),
+    )
     sets_target    = models.PositiveSmallIntegerField()
     affected_side  = models.CharField(max_length=5, choices=AffectedSide.choices)
+
+    stop_reason = models.CharField(
+        max_length=24,
+        blank=True,
+        choices=[
+            ("pain", _("Pain")),
+            ("tired", _("Tired")),
+            ("dizzy", _("Dizzy")),
+            ("breathless", _("Breathless")),
+            ("exercise_difficulty", _("Exercise difficulty")),
+            ("skipped", _("Skipped question")),
+        ],
+        help_text="Patient-selected reason for ending below the minimum dose.",
+    )
+    stop_requires_review = models.BooleanField(
+        default=False,
+        editable=False,
+        help_text=(
+            "True for an early stop involving dizziness or breathlessness. "
+            "This is not real-time monitoring."
+        ),
+    )
 
     quality_score = models.DecimalField(
         max_digits=5, decimal_places=1,
@@ -97,6 +127,7 @@ class Session(TimestampedModel):
         if self.started_at and self.ended_at and self.duration_seconds is None:
             delta = self.ended_at - self.started_at
             self.duration_seconds = max(0, int(delta.total_seconds()))
+        self.stop_requires_review = self.stop_reason in {"dizzy", "breathless"}
         super().save(*args, **kwargs)
 
 

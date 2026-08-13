@@ -3,8 +3,10 @@ import assert from "node:assert/strict";
 import {
   browserSpeechWatchdogMs,
   describeMicrophoneAccessFailure,
+  isMovementRestRequest,
   isSafariBrowser,
   parseConfirmationResponse,
+  parseEarlyStopReason,
   parsePainLevel,
   parsePainSafetyResponse,
   parseRecoveryStatus,
@@ -111,6 +113,29 @@ assert.equal(parseConfirmationResponse("maybe"), null);
 assert.equal(parseConfirmationResponse("是的，正确"), "confirm");
 assert.equal(parseConfirmationResponse("Ya, betul"), "confirm");
 assert.equal(parseConfirmationResponse("இல்லை, மாற்று"), "change");
+
+assert.equal(isMovementRestRequest("I need a rest"), true);
+assert.equal(isMovementRestRequest("Can I take a break please?"), true);
+assert.equal(isMovementRestRequest("Pause the camera guide"), true);
+assert.equal(isMovementRestRequest("我需要休息"), true);
+assert.equal(isMovementRestRequest("Saya perlu rehat"), true);
+assert.equal(isMovementRestRequest("எனக்கு ஓய்வு வேண்டும்"), true);
+assert.equal(
+  isMovementRestRequest("How long should I rest between exercises?"),
+  false,
+  "a question about rest should still go to the AI instead of pausing"
+);
+
+assert.equal(parseEarlyStopReason("I stopped because of pain"), "pain");
+assert.equal(parseEarlyStopReason("I feel very tired"), "tired");
+assert.equal(parseEarlyStopReason("I am dizzy and lightheaded"), "dizzy");
+assert.equal(parseEarlyStopReason("I am short of breath"), "breathless");
+assert.equal(
+  parseEarlyStopReason("The exercise is too difficult"),
+  "exercise_difficulty",
+);
+assert.equal(parseEarlyStopReason("I prefer not to say"), "skipped");
+assert.equal(parseEarlyStopReason("I need some water"), "");
 
 assert.equal(parsePainSafetyResponse("urgent", "No symptoms"), "no");
 assert.equal(parsePainSafetyResponse("urgent", "None"), "no");

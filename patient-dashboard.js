@@ -27,14 +27,14 @@ import {
   walkingConfidencePlanNeedsRefresh,
 } from "./patient-dashboard-state.js?v=13";
 import { saveProfile } from "./personalization.js?v=13";
-import { getLocale, translateText } from "./i18n.js?v=33";
-import { voiceGuidance } from "./voice-guidance.js?v=41";
+import { getLocale, translateText } from "./i18n.js?v=35";
+import { voiceGuidance } from "./voice-guidance.js?v=44";
 import { EXERCISE_MAP } from "./exercises/registry.js?v=61";
 import {
   buildPlannedSessionKey,
   completedExerciseIdsForPlannedSession,
   nextIncompleteExerciseId,
-} from "./planned-session-progress.js?v=1";
+} from "./planned-session-progress.js?v=3";
 
 const WELLNESS_DOSAGE_LABEL = "1 set of 6–10 repetitions";
 

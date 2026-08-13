@@ -183,3 +183,45 @@ class PatientDataIsolationTests(APITestCase):
         self.assertEqual(after.status_code, 201)
         self.assertEqual(str(linked_before.data['session']), str(session.id))
         self.assertEqual(str(after.data['session']), str(session.id))
+
+    def test_early_stop_reason_and_minimum_repetitions_are_persisted(self):
+        self.client.force_authenticate(self.user_a)
+
+        response = self.client.post(
+            '/api/sessions/',
+            {
+                'exercise': self.exercise.id,
+                'started_at': timezone.now().isoformat(),
+                'ended_at': timezone.now().isoformat(),
+                'sets_completed': 0,
+                'reps_completed': 5,
+                'reps_target': 10,
+                'reps_minimum': 6,
+                'sets_target': 1,
+                'affected_side': 'right',
+                'stop_reason': 'dizzy',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['reps_minimum'], 6)
+        self.assertEqual(response.data['stop_reason'], 'dizzy')
+        self.assertTrue(response.data['stop_requires_review'])
+
+    def test_non_urgent_early_stop_does_not_create_urgent_review_flag(self):
+        session = Session.objects.create(
+            patient=self.patient_a,
+            exercise=self.exercise,
+            started_at=timezone.now(),
+            ended_at=timezone.now(),
+            reps_completed=5,
+            reps_target=10,
+            reps_minimum=6,
+            sets_completed=0,
+            sets_target=1,
+            affected_side='right',
+            stop_reason='tired',
+        )
+
+        self.assertFalse(session.stop_requires_review)

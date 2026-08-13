@@ -4,6 +4,7 @@ import fs from "node:fs";
 import {
   buildPlannedSessionKey,
   completedExerciseIdsForPlannedSession,
+  minimumRepetitionsPerSet,
   nextIncompleteExerciseId,
   painBaselineForNextExercise,
   parsePlannedSessionNote,
@@ -34,6 +35,16 @@ assert.deepEqual(parsePlannedSessionNote(notes), {
   sessionTitle: "Leg Strength & Ankle Balance",
 });
 assert.equal(parsePlannedSessionNote("ordinary clinician note"), null);
+assert.equal(
+  minimumRepetitionsPerSet({ reps: 10, repsMin: 6 }),
+  6,
+  "a repetition range should use its lower bound as the completion threshold",
+);
+assert.equal(
+  minimumRepetitionsPerSet({ reps: 10 }),
+  10,
+  "an exact prescription should use its assigned repetition count",
+);
 
 const sessions = [
   {
@@ -56,6 +67,28 @@ const sessions = [
 ];
 assert.equal(sessionReachedTarget(sessions[0]), true);
 assert.equal(sessionReachedTarget(sessions[1]), false);
+assert.equal(
+  sessionReachedTarget({
+    reps_completed: 5,
+    reps_target: 10,
+    reps_minimum: 6,
+    sets_completed: 0,
+    sets_target: 1,
+  }),
+  false,
+  "five repetitions should not complete an assigned range of six to ten",
+);
+assert.equal(
+  sessionReachedTarget({
+    reps_completed: 6,
+    reps_target: 10,
+    reps_minimum: 6,
+    sets_completed: 1,
+    sets_target: 1,
+  }),
+  true,
+  "six repetitions should complete an assigned range of six to ten",
+);
 assert.deepEqual(
   completedExerciseIdsForPlannedSession(sessions, sessionKey),
   ["half-squats"],

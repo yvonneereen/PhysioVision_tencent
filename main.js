@@ -43,9 +43,11 @@ import {
 } from "./api.js?v=32";
 import { analysePatientTrend } from "./patient-dashboard-state.js?v=13";
 import { DRAFT_EXERCISES } from "./exercises/catalog.js?v=3";
-import { translateText } from "./i18n.js?v=34";
+import { translateText } from "./i18n.js?v=35";
 import {
+  isMovementRestRequest,
   parseConfirmationResponse,
+  parseEarlyStopReason,
   parsePainLevel,
   parsePainSafetyResponse,
   parseRecoveryStatus,
@@ -53,7 +55,7 @@ import {
   isSafariBrowser,
   readMicrophonePermissionState,
   voiceGuidance,
-} from "./voice-guidance.js?v=42";
+} from "./voice-guidance.js?v=44";
 import {
   PRACTICE_VIEWS,
   acceptedWellnessPlan,
@@ -72,11 +74,12 @@ import {
   parseWellbeingResponse,
 } from "./fall-monitoring.js?v=4";
 import {
+  minimumRepetitionsPerSet,
   painBaselineForNextExercise,
   sessionReachedTarget,
   serializePlannedSessionNote,
   sessionsForPlannedSession,
-} from "./planned-session-progress.js?v=2";
+} from "./planned-session-progress.js?v=3";
 
 let PoseLandmarker;
 let HandLandmarker;
@@ -147,6 +150,23 @@ const exerciseCompletionConfirmBtn = document.getElementById(
 );
 const exerciseCompletionNotYetBtn = document.getElementById(
   "exerciseCompletionNotYet"
+);
+const earlyStopPromptEl = document.getElementById("earlyStopPrompt");
+const earlyStopQuestionEl = document.getElementById("earlyStopQuestion");
+const earlyStopPromptTextEl = document.getElementById("earlyStopPromptText");
+const earlyStopReasonChoicesEl = document.getElementById(
+  "earlyStopReasonChoices"
+);
+const earlyStopSkipBtn = document.getElementById("earlyStopSkip");
+const earlyStopSafetyEl = document.getElementById("earlyStopSafety");
+const earlyStopSafetyTitleEl = document.getElementById("earlyStopSafetyTitle");
+const earlyStopSafetyMessageEl = document.getElementById(
+  "earlyStopSafetyMessage"
+);
+const earlyStopSafetyHelpEl = document.getElementById("earlyStopSafetyHelp");
+const earlyStopContinueBtn = document.getElementById("earlyStopContinue");
+const earlyStopVoiceStatusEl = document.getElementById(
+  "earlyStopVoiceStatus"
 );
 const cameraSessionHintEl = document.getElementById("cameraSessionHint");
 const liveSessionDayEl = document.getElementById("liveSessionDay");
@@ -1309,8 +1329,22 @@ let sessionAllSetsComplete = false;
 let lastFeedbackResult = null;
 let exerciseCompletionConfirmationActive = false;
 let exerciseCompletionConfirmationGeneration = 0;
+let earlyStopPromptActive = false;
+let earlyStopPromptGeneration = 0;
+let pendingEarlyStopReason = "";
 let finalRepReturnPromptedSetKey = "";
 let finalRepReturnPendingSetKey = "";
+
+const EARLY_STOP_QUESTION =
+  "Can you tell me what made you stop? Is it say pain, tired, dizzy or breathless or exercise difficulty.";
+const EARLY_STOP_REASONS = new Set([
+  "pain",
+  "tired",
+  "dizzy",
+  "breathless",
+  "exercise_difficulty",
+  "skipped",
+]);
 
 const MOVEMENT_AI_TRANSIENT_LISTENING_ERRORS = new Set([
   "no-match",
@@ -1518,10 +1552,34 @@ function beginMovementAiQuestion(question, generation) {
   if (!spoken) captureMovementAiQuestion(generation);
 }
 
+async function pauseMovementGuideForRest() {
+  if (!running || !exerciseSessionActive) return false;
+
+  // Use the exact same pause path as the on-screen Pause camera guide control.
+  // That path stops camera processing without resetting the active session or
+  // its recognized repetition count.
+  deactivateCameraGuide();
+  await voiceGuidance.prepareSpeechAfterMicrophoneRelease();
+  if (running || !exerciseSessionActive) return true;
+
+  speakMovementGuide(
+    "Your camera guide is paused for a rest. Your recognized repetitions are kept. Select Resume camera guide when you are ready to continue.",
+    {
+      key: `movement-rest:paused:${engine.exercise?.id ?? "exercise"}`,
+      interrupt: true,
+    }
+  );
+  return true;
+}
+
 async function answerMovementAiQuestion(question, generation) {
   const cleanedQuestion = String(question ?? "").trim();
   if (!cleanedQuestion || !movementAiCanListen(generation)) {
     scheduleMovementAiWakeListening(100, generation);
+    return;
+  }
+  if (isMovementRestRequest(cleanedQuestion)) {
+    await pauseMovementGuideForRest();
     return;
   }
 
@@ -2080,6 +2138,216 @@ function beginExerciseCompletionConfirmation(feedback, completion) {
       if (!voiceGuidance.isSpeaking) askQuestion();
     }, 14000);
   }
+}
+
+function currentSessionDoseProgress(exercise = engine?.exercise) {
+  const dose = activeDose(exercise);
+  const repetitionsMinimum = minimumRepetitionsPerSet(dose);
+  const currentSetReps = sessionAllSetsComplete
+    ? 0
+    : Math.max(0, Math.floor(Number(engine?.repCount) || 0));
+  const currentSetReachedMinimum = Boolean(
+    repetitionsMinimum && currentSetReps >= repetitionsMinimum
+  );
+  const setsTarget = plannedSetCount(exercise);
+  const setsCompleted = Math.min(
+    setsTarget,
+    completedSetCount + (currentSetReachedMinimum ? 1 : 0),
+  );
+  return {
+    currentSetReps,
+    repetitionsCompleted: completedSessionReps + currentSetReps,
+    repetitionsMinimum,
+    setsCompleted,
+    setsTarget,
+    reachedMinimum: Boolean(
+      !repetitionsMinimum
+      || sessionAllSetsComplete
+      || setsCompleted >= setsTarget
+    ),
+  };
+}
+
+function shouldAskEarlyStopReason() {
+  if (!exerciseSessionActive || goalMetric(engine.exercise).isHold) return false;
+  const progress = currentSessionDoseProgress();
+  return Boolean(progress.repetitionsMinimum && !progress.reachedMinimum);
+}
+
+function clearEarlyStopPrompt({ cancelListening = false } = {}) {
+  earlyStopPromptGeneration += 1;
+  earlyStopPromptActive = false;
+  if (cancelListening) voiceGuidance.cancelListening();
+  earlyStopPromptEl?.classList.add("hidden");
+  earlyStopQuestionEl?.classList.remove("hidden");
+  earlyStopSafetyEl?.classList.add("hidden");
+  if (earlyStopPromptTextEl) earlyStopPromptTextEl.textContent = EARLY_STOP_QUESTION;
+  if (earlyStopVoiceStatusEl) earlyStopVoiceStatusEl.textContent = "";
+}
+
+function listenForEarlyStopReason(generation) {
+  if (
+    !earlyStopPromptActive
+    || generation !== earlyStopPromptGeneration
+    || !handsFreeVoiceEnabled
+    || !voiceGuidance.canListen
+  ) {
+    return;
+  }
+  earlyStopVoiceStatusEl.textContent =
+    "Listening for pain, tired, dizzy, breathless, or exercise difficulty.";
+  const started = voiceGuidance.listen({
+    maxNoSpeechRetries: 1,
+    interimSilenceMs: 400,
+    onStatus: (message) => {
+      if (
+        earlyStopPromptActive
+        && generation === earlyStopPromptGeneration
+      ) {
+        earlyStopVoiceStatusEl.textContent = message;
+      }
+    },
+    onResult: (transcript) => {
+      if (
+        !earlyStopPromptActive
+        || generation !== earlyStopPromptGeneration
+      ) {
+        return;
+      }
+      const reason = parseEarlyStopReason(transcript);
+      if (reason) {
+        acceptEarlyStopReason(reason);
+        return;
+      }
+      const retry =
+        "I could not match that answer. Say pain, tired, dizzy, breathless, or exercise difficulty, or use a button.";
+      earlyStopVoiceStatusEl.textContent = retry;
+      const spoken = speakMovementGuide(retry, {
+        key: `early-stop:retry:${generation}`,
+        interrupt: true,
+        onEnd: () => listenForEarlyStopReason(generation),
+      });
+      if (!spoken) listenForEarlyStopReason(generation);
+    },
+    onError: () => {
+      if (
+        earlyStopPromptActive
+        && generation === earlyStopPromptGeneration
+      ) {
+        earlyStopVoiceStatusEl.textContent =
+          "I could not hear an answer. Please use one of the buttons, or skip this question.";
+      }
+    },
+  });
+  if (!started) {
+    earlyStopVoiceStatusEl.textContent =
+      "Voice input is unavailable. Please use one of the buttons, or skip this question.";
+  }
+}
+
+function beginEarlyStopReasonPrompt() {
+  if (!exerciseSessionActive || earlyStopPromptActive) return false;
+  clearExerciseCompletionConfirmation({ cancelListening: true });
+  if (running) {
+    deactivateCameraGuide({
+      statusMessage: "Exercise stopped before the minimum repetitions",
+    });
+  }
+  earlyStopPromptGeneration += 1;
+  const generation = earlyStopPromptGeneration;
+  earlyStopPromptActive = true;
+  pendingEarlyStopReason = "";
+  earlyStopQuestionEl.classList.remove("hidden");
+  earlyStopSafetyEl.classList.add("hidden");
+  earlyStopPromptTextEl.textContent = EARLY_STOP_QUESTION;
+  earlyStopPromptEl.classList.remove("hidden");
+  finishExerciseBtn.disabled = true;
+  statusEl.textContent = "Exercise stopped before the minimum repetitions";
+  cameraSessionHintEl.textContent =
+    "The camera is off and your recognized repetitions are kept. Choose a reason or skip this question.";
+  setFeedbackBanner("tracking", "Exercise stopped. The guide will not resume automatically.");
+
+  const firstReasonButton = earlyStopReasonChoicesEl?.querySelector("button");
+  window.requestAnimationFrame(() => {
+    earlyStopPromptEl?.scrollIntoView({ behavior: "auto", block: "nearest" });
+    if (!handsFreeVoiceEnabled) firstReasonButton?.focus({ preventScroll: true });
+  });
+
+  if (handsFreeVoiceEnabled && voiceGuidance.canListen) {
+    earlyStopVoiceStatusEl.textContent =
+      "Listening will start after the question.";
+    const spoken = speakMovementGuide(EARLY_STOP_QUESTION, {
+      key: `early-stop:question:${engine.exercise?.id ?? "exercise"}`,
+      interrupt: true,
+      onEnd: () => listenForEarlyStopReason(generation),
+    });
+    if (!spoken) listenForEarlyStopReason(generation);
+  } else {
+    earlyStopVoiceStatusEl.textContent =
+      "Choose the answer that best fits, or skip this question.";
+  }
+  return true;
+}
+
+function renderEarlyStopSafetyOutcome(reason) {
+  const isBreathless = reason === "breathless";
+  const heading = isBreathless
+    ? "Stop exercising and rest somewhere safe"
+    : "Stop exercising and sit or lie somewhere safe";
+  const message = isBreathless
+    ? (
+      "Do not continue this exercise. If the breathing difficulty is unusual, severe, worsening, or not improving with rest, get urgent help."
+    )
+    : (
+      "Do not continue this exercise. If the dizziness is severe, worsening, causes fainting, or does not improve with rest, get urgent help."
+    );
+  const help =
+    "Call 995 now for severe breathing difficulty, chest pressure or pain, fainting, sudden weakness or numbness, or if you cannot get to a safe position.";
+  earlyStopQuestionEl.classList.add("hidden");
+  earlyStopSafetyEl.classList.remove("hidden");
+  earlyStopPromptEl.classList.remove("hidden");
+  earlyStopSafetyTitleEl.textContent = heading;
+  earlyStopSafetyMessageEl.textContent = message;
+  earlyStopSafetyHelpEl.textContent = help;
+  earlyStopVoiceStatusEl.textContent =
+    "The stopped session is saved and flagged for clinician review. This is not real-time monitoring.";
+  statusEl.textContent = "Exercise stopped — follow the safety instructions";
+  cameraSessionHintEl.textContent =
+    "The exercise will not restart. Follow the safety instructions before continuing to the check-in.";
+  speakMovementGuide(`${heading}. ${message} ${help}`, {
+    key: `early-stop:safety:${reason}`,
+    interrupt: true,
+  });
+  window.requestAnimationFrame(() => {
+    earlyStopSafetyEl?.scrollIntoView({ behavior: "auto", block: "nearest" });
+    earlyStopContinueBtn?.focus({ preventScroll: true });
+  });
+}
+
+function acceptEarlyStopReason(reason) {
+  if (!earlyStopPromptActive || !EARLY_STOP_REASONS.has(reason)) return false;
+  earlyStopPromptActive = false;
+  earlyStopPromptGeneration += 1;
+  voiceGuidance.cancelListening();
+  pendingEarlyStopReason = reason;
+
+  if (reason === "dizzy" || reason === "breathless") {
+    const finished = finishExerciseAndCheckIn({
+      source: "early-stop",
+      stopReason: reason,
+      deferCheckin: true,
+    });
+    if (finished) {
+      pendingEarlyStopReason = reason;
+      renderEarlyStopSafetyOutcome(reason);
+    }
+    return finished;
+  }
+
+  return finishExerciseAndCheckIn({
+    source: "early-stop",
+    stopReason: reason,
+  });
 }
 
 function processPendingRepAnnouncements() {
@@ -4611,7 +4879,10 @@ function announceExerciseInstruction(prefix = "", { onEnd = null } = {}) {
     exerciseTargetGuidance(engine.exercise),
     clinicianNote ? `Your clinician's instruction is: ${clinicianNote}` : "",
     handsFreeVoiceEnabled
-      ? "After this instruction, say Hey Guide followed by your question whenever you need help."
+      ? (
+        "After this instruction, say Hey Guide followed by your question whenever you need help. "
+        + "To pause for a rest without returning to your device, say Hey Guide, I need a rest."
+      )
       : "",
     // Put the movement instruction last so its final words, "Begin now", are
     // the signal that counting is becoming active.
@@ -4726,7 +4997,8 @@ async function activateCameraGuide({ announceInstruction = true } = {}) {
     cameraSessionHintEl.textContent = handsFreeVoiceEnabled
       ? (
         "Camera tracking and AI questions are active together. Say “Hey Guide” "
-        + "to ask something, or choose Finish exercise and check in when done."
+        + "to ask something, or say “Hey Guide, I need a rest” to pause. "
+        + "Choose Finish exercise and check in when done."
       )
       : (
         "Pausing only stops the camera. Choose “Finish exercise and check in” "
@@ -4900,6 +5172,8 @@ function clearSessionMeasurements() {
 }
 
 function resetSetProgress() {
+  clearEarlyStopPrompt({ cancelListening: true });
+  pendingEarlyStopReason = "";
   completedSetCount = 0;
   completedSessionReps = 0;
   pendingSetStartCheck = null;
@@ -4959,15 +5233,10 @@ function discardExerciseSession() {
   renderPrimaryCameraAction();
 }
 
-function completeExerciseSession() {
-  const currentSetReps = sessionAllSetsComplete ? 0 : engine.repCount;
-  const totalRepsCompleted = completedSessionReps + currentSetReps;
-  const partialSetCompleted =
-    !sessionAllSetsComplete && currentSetReps > 0 ? 1 : 0;
-  const totalSetsCompleted = Math.min(
-    plannedSetCount(),
-    completedSetCount + partialSetCompleted
-  );
+function completeExerciseSession({ stopReason = pendingEarlyStopReason } = {}) {
+  const progress = currentSessionDoseProgress();
+  const totalRepsCompleted = progress.repetitionsCompleted;
+  const totalSetsCompleted = progress.setsCompleted;
   const shouldRecord =
     exerciseSessionActive &&
     isPracticeAccountAuthenticated() &&
@@ -5003,7 +5272,9 @@ function completeExerciseSession() {
     sets_completed:          totalSetsCompleted,
     reps_completed:          totalRepsCompleted,
     reps_target:             dose.reps ?? totalRepsCompleted,
+    reps_minimum:            progress.repetitionsMinimum ?? dose.reps ?? null,
     sets_target:             dose.sets ?? 1,
+    stop_reason:             EARLY_STOP_REASONS.has(stopReason) ? stopReason : "",
     affected_side:           sideSelect.value || profile.focusSide || "right",
     cues_triggered:          cuesTriggered,
     // Symmetry is coached through the same reminder flow when it is reliable;
@@ -5024,6 +5295,9 @@ function completeExerciseSession() {
   completedExerciseSessionSnapshot = {
     ...sessionPayload,
     exercise_name: ex.name,
+    stop_requires_review: ["dizzy", "breathless"].includes(
+      sessionPayload.stop_reason,
+    ),
   };
   completedExerciseSessionError = null;
   completedExerciseCheckinLinkError = false;
@@ -5097,9 +5371,11 @@ const PAIN_PROMPT_VOICE_GROUP = MOVEMENT_GUIDE_VOICE_GROUP;
 const PAIN_PROMPT_RATE = MOVEMENT_GUIDE_RATE;
 const PAIN_PROMPT_PITCH = MOVEMENT_GUIDE_PITCH;
 
-function painQuestion(context) {
+function painQuestion(context, stopReason = painCheckinState?.stopReason) {
   return context === "before"
     ? "Before we begin, how is your pain right now? Please give me a number from zero to ten."
+    : stopReason
+      ? "You stopped the exercise. How is your pain now? Please give me a number from zero to ten."
     : "You’ve finished the exercise. How is your pain now? Please give me a number from zero to ten.";
 }
 
@@ -5578,6 +5854,8 @@ function showPainCheckin(context = "after", {
   startAfter = false,
   continuation = "",
   calibrationTrigger = null,
+  forceSafetyInterview = false,
+  stopReason = "",
 } = {}) {
   if (!isPracticeAccountAuthenticated()) {
     continueAfterPainCheckin({
@@ -5597,6 +5875,8 @@ function showPainCheckin(context = "after", {
           startAfter,
           continuation,
           calibrationTrigger,
+          forceSafetyInterview,
+          stopReason,
         });
       }
     });
@@ -5617,6 +5897,8 @@ function showPainCheckin(context = "after", {
     startAfter,
     continuation,
     calibrationTrigger,
+    forceSafetyInterview: Boolean(forceSafetyInterview),
+    stopReason: EARLY_STOP_REASONS.has(stopReason) ? stopReason : "",
     stage: "pain",
     painLevel: null,
     recoveryStatus: "",
@@ -5624,10 +5906,13 @@ function showPainCheckin(context = "after", {
     languageInterpretationAttempts: {},
   };
   painVoiceFallbackNeeded = false;
-  painCheckinContextEl.textContent =
-    context === "before" ? "Before exercise" : "After exercise";
+  painCheckinContextEl.textContent = context === "before"
+    ? "Before exercise"
+    : stopReason
+      ? "After stopping"
+      : "After exercise";
   painCheckinTitleEl.innerHTML =
-    `${escapeHtml(painQuestion(context))} <span>(0 = none, 10 = severe)</span>`;
+    `${escapeHtml(painQuestion(context, stopReason))} <span>(0 = none, 10 = severe)</span>`;
   painLevelChoicesEl.classList.remove("hidden");
   painConfirmationEl.classList.add("hidden");
   recoveryChoicesEl.classList.add("hidden");
@@ -5666,7 +5951,7 @@ function showPainCheckin(context = "after", {
   });
 
   speakPainPrompt(
-    painQuestion(context),
+    painQuestion(context, stopReason),
     `checkin:${context}:pain`,
     "pain"
   );
@@ -5892,6 +6177,18 @@ function showPostExerciseDestination(completed, beforePain, painSavePromise) {
 function openSessionSummary(completed, beforePain) {
   const snapshot = completedExerciseSessionSnapshot ?? {};
   const exerciseName = snapshot.exercise_name ?? "Exercise";
+  const stoppedEarly = Boolean(snapshot.stop_reason);
+  const repetitionsCompleted = Number(snapshot.reps_completed ?? 0);
+  const repetitionsTarget = Number(snapshot.reps_target ?? 0);
+  const repetitionsMinimum = Number(
+    snapshot.reps_minimum ?? repetitionsTarget,
+  );
+  const assignedRepetitionLabel = (
+    repetitionsMinimum > 0
+    && repetitionsTarget > repetitionsMinimum
+  )
+    ? `${repetitionsMinimum}–${repetitionsTarget}`
+    : String(repetitionsTarget || repetitionsMinimum || 0);
   const side = snapshot.affected_side
     ? `${snapshot.affected_side} side`
     : "selected side";
@@ -5903,6 +6200,8 @@ function openSessionSummary(completed, beforePain) {
   );
   sessionSummaryTitleEl.textContent = completedPlannedSession
     ? `${activeSessionDay || "Today’s"} session complete`
+    : stoppedEarly
+      ? `${exerciseName} stopped`
     : `${exerciseName} session complete`;
   sessionSummaryScopeEl.textContent = completedPlannedSession
     ? (
@@ -5912,7 +6211,11 @@ function openSessionSummary(completed, beforePain) {
     : `Results and trends compare ${exerciseName} on the ${side} only.`;
   sessionSummaryCompletedEl.textContent = completedPlannedSession
     ? `${progress.completedCount} of ${progress.totalExercises} exercises`
-    : `${snapshot.reps_completed ?? 0} of ${snapshot.reps_target ?? 0} repetitions`;
+    : stoppedEarly
+      ? `${repetitionsCompleted} repetitions · minimum ${repetitionsMinimum}`
+      : repetitionsMinimum < repetitionsTarget
+        ? `${repetitionsCompleted} repetitions · assigned ${assignedRepetitionLabel}`
+        : `${repetitionsCompleted} of ${repetitionsTarget} repetitions`;
   sessionSummaryQualityEl.textContent = (
     snapshot.quality_score !== null
     && snapshot.quality_score !== undefined
@@ -5930,7 +6233,11 @@ function openSessionSummary(completed, beforePain) {
   sessionSummaryTrendEl.textContent =
     "Saving this check-in and calculating your same-exercise trend…";
   sessionSummaryCueEl.textContent = "Reviewing movement guidance…";
-  sessionSummaryStatusEl.textContent = "Preparing your results";
+  sessionSummaryStatusEl.textContent = stoppedEarly
+    ? snapshot.stop_requires_review
+      ? "Review recorded stop"
+      : "Stopped early"
+    : "Preparing your results";
   sessionSummaryModalEl?.classList.add("is-open");
   sessionSummaryModalEl?.setAttribute("aria-hidden", "false");
   document.body.classList.add("modal-open");
@@ -6083,6 +6390,12 @@ async function finalizeSessionSummary(completed, beforePain, painSavePromise) {
       : "Trend unavailable";
   }
 
+  if (snapshot.stop_reason) {
+    sessionSummaryStatusEl.textContent = snapshot.stop_requires_review
+      ? "Review recorded stop"
+      : "Stopped early";
+  }
+
   announceSavedExerciseSession(session);
   speakMovementGuide(
     "Your session summary is ready. Review your movement quality, pain response, and recovery before continuing.",
@@ -6154,11 +6467,18 @@ function createPainSafetyAnswers() {
     safeMovement: "",
     languageInterpretations: [],
     outcome: "",
+    stopReason: painCheckinState?.stopReason ?? "",
     reportForPhysiotherapist: false,
     exerciseId: engine.exercise?.id ?? "",
     exerciseName: engine.exercise?.name ?? "",
-    repsCompleted: completedSessionReps + (engine.repCount ?? 0),
-    setNumber: completedSetCount + 1,
+    repsCompleted: Number(
+      completedExerciseSessionSnapshot?.reps_completed
+        ?? completedSessionReps + (engine.repCount ?? 0),
+    ),
+    setNumber: Math.min(
+      Number(completedExerciseSessionSnapshot?.sets_target ?? plannedSetCount()),
+      Number(completedExerciseSessionSnapshot?.sets_completed ?? completedSetCount) + 1,
+    ),
   };
 }
 
@@ -6371,6 +6691,7 @@ function painSafetyCheckinPayload(state, reportForPhysiotherapist) {
       exercise_name: answers.exerciseName,
       reps_completed: answers.repsCompleted,
       set_number: answers.setNumber,
+      stop_reason: answers.stopReason,
     },
     requires_review:
       answers.outcome !== "monitor" || reportForPhysiotherapist,
@@ -6698,6 +7019,10 @@ function acceptPainConfirmation(response) {
       "Please say yes or change, or use one of the confirmation buttons.";
     return;
   }
+  if (painCheckinState.forceSafetyInterview) {
+    beginPainSafetyInterview();
+    return;
+  }
   if (requiresPainSafetyInterview()) beginPainSafetyInterview();
   else if (shouldAskRecovery()) beginRecoveryQuestion();
   else finishPainCheckin();
@@ -6820,26 +7145,49 @@ painSkipBtn.addEventListener("click", () => {
   if (completed) continueAfterPainCheckin(completed);
 });
 
-function finishExerciseAndCheckIn({ source = "button" } = {}) {
+function finishExerciseAndCheckIn({
+  source = "button",
+  stopReason = "",
+  deferCheckin = false,
+} = {}) {
   if (!exerciseSessionActive) return false;
+  if (!stopReason && shouldAskEarlyStopReason()) {
+    return beginEarlyStopReasonPrompt();
+  }
   clearExerciseCompletionConfirmation({ cancelListening: true });
+  clearEarlyStopPrompt({ cancelListening: true });
   if (running) {
     deactivateCameraGuide({
       statusMessage: "Camera stopped — finishing exercise",
     });
   }
+  pendingEarlyStopReason = stopReason;
   completeExerciseSession();
   toggleBtn.classList.add("hidden");
   toggleBtn.innerHTML = 'Pause camera guide <span aria-hidden="true">Ⅱ</span>';
   finishExerciseBtn.disabled = true;
   preExerciseCheckinCompleted = false;
   renderPrimaryCameraAction();
-  cameraSessionHintEl.textContent = source === "voice"
-    ? "You said yes. The exercise is marked finished and your check-in is ready."
-    : "Exercise marked finished. Complete the optional check-in, or skip it.";
-  statusEl.textContent = "Exercise marked finished";
+  const stoppedEarly = Boolean(stopReason);
+  cameraSessionHintEl.textContent = stoppedEarly
+    ? "Your stopped session is saved. The exercise will not restart automatically."
+    : source === "voice"
+      ? "You said yes. The exercise is marked finished and your check-in is ready."
+      : "Exercise marked finished. Complete the optional check-in, or skip it.";
+  statusEl.textContent = stoppedEarly
+    ? "Exercise stopped and saved"
+    : "Exercise marked finished";
   setFeedbackBanner("finished");
-  showPainCheckin("after");
+  if (!deferCheckin) {
+    if (stopReason) {
+      showPainCheckin("after", {
+        forceSafetyInterview: stopReason === "pain",
+        stopReason,
+      });
+    } else {
+      showPainCheckin("after");
+    }
+  }
   return true;
 }
 
@@ -6857,6 +7205,21 @@ exerciseCompletionConfirmBtn?.addEventListener("click", () => {
 
 exerciseCompletionNotYetBtn?.addEventListener("click", () => {
   declineExerciseCompletionConfirmation();
+});
+
+earlyStopReasonChoicesEl?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-stop-reason]");
+  if (button) acceptEarlyStopReason(button.dataset.stopReason);
+});
+
+earlyStopSkipBtn?.addEventListener("click", () => {
+  acceptEarlyStopReason("skipped");
+});
+
+earlyStopContinueBtn?.addEventListener("click", () => {
+  const stopReason = pendingEarlyStopReason;
+  clearEarlyStopPrompt({ cancelListening: true });
+  showPainCheckin("after", { stopReason });
 });
 
 handTrackingToggle.addEventListener("click", async () => {

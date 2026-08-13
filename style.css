@@ -3162,6 +3162,115 @@ body.fall-safety-open {
   background: #fff;
 }
 
+.early-stop-prompt {
+  display: grid;
+  gap: 12px;
+  margin: 12px 0;
+  padding: 18px;
+  border: 2px solid rgba(220, 118, 95, 0.52);
+  border-radius: 14px;
+  color: var(--ink);
+  background: #fff3ef;
+  box-shadow: 0 12px 28px rgba(25, 56, 58, 0.1);
+}
+
+.early-stop-prompt strong {
+  font-size: 1.125rem;
+}
+
+.early-stop-prompt p {
+  margin: 6px 0 0;
+  color: #60423b;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.early-stop-reason-choices {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 14px;
+}
+
+.early-stop-reason-choices button {
+  min-height: 52px;
+  padding: 10px 12px;
+  border: 1px solid rgba(25, 56, 58, 0.24);
+  border-radius: 10px;
+  color: var(--ink);
+  background: #fff;
+  font: 700 1rem/1.25 var(--font-body);
+  cursor: pointer;
+}
+
+.early-stop-reason-choices button:last-child {
+  grid-column: 1 / -1;
+}
+
+.early-stop-reason-choices button:hover,
+.early-stop-reason-choices button:focus-visible {
+  border-color: var(--coral);
+  background: #fff9f7;
+}
+
+.early-stop-skip {
+  margin-top: 10px;
+  color: #6c625f;
+  font-size: 1rem;
+}
+
+.early-stop-safety {
+  display: grid;
+  gap: 10px;
+  padding: 15px;
+  border: 2px solid #a13c2d;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.early-stop-safety p {
+  margin: 0;
+}
+
+.early-stop-safety-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.early-stop-safety-actions .button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 50px;
+  padding: 10px 12px;
+  text-align: center;
+  text-decoration: none;
+}
+
+.early-stop-call {
+  border-color: #a13c2d;
+  color: #fff;
+  background: #a13c2d;
+}
+
+.early-stop-safety small {
+  color: #6c625f;
+  font-size: 1rem;
+  line-height: 1.45;
+}
+
+@media (max-width: 520px) {
+  .early-stop-reason-choices,
+  .early-stop-safety-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .early-stop-reason-choices button:last-child {
+    grid-column: auto;
+  }
+}
+
 .camera-session-hint {
   margin: 9px 2px 12px;
   color: var(--muted);

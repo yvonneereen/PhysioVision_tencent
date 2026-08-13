@@ -1,7 +1,7 @@
 import {
   getSpeechLocale,
   translateText,
-} from "./i18n.js?v=34";
+} from "./i18n.js?v=35";
 import { generateGuidanceSpeech } from "./api.js?v=32";
 
 const VOICE_PREFERENCE_KEY = "physiovision.voice.enabled.v1";
@@ -322,6 +322,52 @@ export function parseConfirmationResponse(transcript) {
     return "confirm";
   }
   return null;
+}
+
+export function isMovementRestRequest(transcript) {
+  const normalized = normalizeSpeech(transcript).trim();
+  if (!normalized) return false;
+
+  const englishRequest = /^(?:please\s+)?(?:(?:(?:i\s+(?:need|want|have)|i\s+would\s+like|i'd\s+like|can\s+i|could\s+i|may\s+i|let\s+me)\s+(?:to\s+)?(?:have\s+|take\s+)?)(?:a\s+)?(?:short\s+|quick\s+|little\s+)?(?:rest|break)|(?:take|have)\s+(?:a\s+)?(?:short\s+|quick\s+)?(?:rest|break)|(?:rest|break))(?:\s+(?:now|please))?$/;
+  const englishPause = /^(?:please\s+)?(?:pause|stop)(?:\s+(?:the|this|my))?(?:\s+(?:camera|movement|exercise))?(?:\s+guide)?(?:\s+(?:for|so\s+i\s+can\s+take)\s+(?:a\s+)?(?:rest|break))?(?:\s+(?:now|please))?$/;
+  const chineseRequest = /^(?:我(?:需要|想要|要|想)\s*休息|让我\s*休息|休息(?:一下)?|暂停(?:一下)?|停一下)$/u;
+  const malayRequest = /^(?:saya\s+(?:perlu|mahu|nak)\s+(?:berehat|rehat)|boleh\s+saya\s+(?:berehat|rehat)|(?:berehat|rehat|berhenti)\s+(?:sebentar|sekejap))$/u;
+  const tamilRequest = /^(?:எனக்கு\s+(?:ஓய்வு|இடைவேளை)\s+வேண்டும்|நான்\s+ஓய்வெடுக்க\s+வேண்டும்|(?:சிறிது\s+)?ஓய்வு\s+எடுக்க|சிறிது\s+நிறுத்து)$/u;
+
+  return englishRequest.test(normalized)
+    || englishPause.test(normalized)
+    || chineseRequest.test(normalized)
+    || malayRequest.test(normalized)
+    || tamilRequest.test(normalized);
+}
+
+export function parseEarlyStopReason(transcript) {
+  const normalized = normalizeSpeech(transcript);
+  if (!normalized) return "";
+
+  if (
+    /\b(breathless|short of breath|out of breath|cannot breathe|can't breathe|hard to breathe|difficulty breathing)\b/.test(normalized)
+  ) {
+    return "breathless";
+  }
+  if (/\b(dizzy|dizziness|faint|faintness|lightheaded|light headed)\b/.test(normalized)) {
+    return "dizzy";
+  }
+  if (/\b(pain|painful|hurts?|aching|ache|sore)\b/.test(normalized)) {
+    return "pain";
+  }
+  if (/\b(tired|tiring|fatigue|fatigued|exhausted|no energy)\b/.test(normalized)) {
+    return "tired";
+  }
+  if (
+    /\b(exercise (?:is |was )?(?:too )?(?:difficult|hard|challenging|unclear)|too difficult|too hard|cannot do (?:it|this)|can't do (?:it|this)|instructions? (?:are |were )?unclear)\b/.test(normalized)
+  ) {
+    return "exercise_difficulty";
+  }
+  if (/\b(skip|prefer not to say|do not want to say|don't want to say)\b/.test(normalized)) {
+    return "skipped";
+  }
+  return "";
 }
 
 export function parsePainSafetyResponse(stage, transcript) {

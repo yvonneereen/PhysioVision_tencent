@@ -70,16 +70,39 @@ export function parsePlannedSessionNote(notes) {
   }
 }
 
+function positiveInteger(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0
+    ? Math.floor(number)
+    : null;
+}
+
+export function minimumRepetitionsPerSet(dose = {}) {
+  return positiveInteger(
+    dose?.repsMin
+      ?? dose?.reps_minimum
+      ?? dose?.repsMinimum
+      ?? dose?.reps_min
+      ?? dose?.reps,
+  );
+}
+
 export function sessionReachedTarget(session) {
   const repsCompleted = Number(session?.reps_completed ?? session?.repsCompleted);
   const repsTarget = Number(session?.reps_target ?? session?.repsTarget);
+  const repsMinimum = Number(
+    session?.reps_minimum
+      ?? session?.repsMinimum
+      ?? session?.reps_min
+      ?? repsTarget,
+  );
   const setsCompleted = Number(session?.sets_completed ?? session?.setsCompleted);
   const setsTarget = Number(session?.sets_target ?? session?.setsTarget);
   return (
     Number.isFinite(repsCompleted)
-    && Number.isFinite(repsTarget)
-    && repsTarget > 0
-    && repsCompleted >= repsTarget
+    && Number.isFinite(repsMinimum)
+    && repsMinimum > 0
+    && repsCompleted >= repsMinimum
     && (
       !Number.isFinite(setsTarget)
       || setsTarget <= 0

@@ -11,13 +11,17 @@ class SessionSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'exercise', 'exercise_name', 'prescription', 'calibration',
             'started_at', 'ended_at', 'duration_seconds',
-            'sets_completed', 'reps_completed', 'reps_target', 'sets_target',
+            'sets_completed', 'reps_completed', 'reps_target', 'reps_minimum',
+            'sets_target', 'stop_reason', 'stop_requires_review',
             'affected_side', 'quality_score', 'pain_level', 'notes',
             'cues_triggered', 'symmetry_warnings_count', 'low_confidence_frames_pct',
             'angle_summaries',
             'created_at', 'updated_at',
         ]
-        read_only_fields = ['id', 'duration_seconds', 'created_at', 'updated_at']
+        read_only_fields = [
+            'id', 'duration_seconds', 'stop_requires_review',
+            'created_at', 'updated_at',
+        ]
 
     def validate(self, attrs):
         prescription = attrs.get(

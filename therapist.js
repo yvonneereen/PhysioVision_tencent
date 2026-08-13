@@ -106,6 +106,21 @@ function painSafetyReview(checkin) {
     </span>`;
 }
 
+function sessionStopReason(session) {
+  const label = {
+    pain: "Pain",
+    tired: "Tired",
+    dizzy: "Dizzy",
+    breathless: "Breathless",
+    exercise_difficulty: "Exercise difficulty",
+    skipped: "Reason skipped",
+  }[session?.stop_reason];
+  if (!label) return "";
+  return session.stop_requires_review
+    ? `${label} · Review recorded stop`
+    : label;
+}
+
 function statusText(patient) {
   if (patient.open_escalations_count > 0) return { label: "Review now", cls: "status-pill-review" };
   if (patient.trend === "declining") return { label: "Monitor", cls: "status-pill-watch" };
@@ -241,9 +256,9 @@ async function showPatientDetail(patientId) {
       <div class="detail-row">
         <span>${escapeHtml(s.exercise_name || s.exercise || "Exercise")}</span>
         <span>${new Date(s.started_at).toLocaleDateString()}</span>
-        <span>${s.reps_completed}/${s.reps_target} reps</span>
+        <span>${s.reps_completed}/${s.reps_minimum || s.reps_target} minimum reps</span>
         <span>Q ${s.quality_score ?? "—"}</span>
-        <span>${painBadge(s.pain_level)}</span>
+        <span>${sessionStopReason(s) ? `Stopped: ${escapeHtml(sessionStopReason(s))}` : painBadge(s.pain_level)}</span>
       </div>`).join("") || `<p class="empty-state">No sessions logged.</p>`;
 
     const painRows = pains.slice(0, 5).map(p => `

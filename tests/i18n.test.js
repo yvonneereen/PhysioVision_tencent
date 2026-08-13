@@ -23,7 +23,7 @@ assert.ok(
 );
 assert.deepEqual(
   [...new Set(i18nCacheVersions)],
-  ["33"],
+  ["35"],
   "all browser entry points must use one i18n URL so only one DOM observer is created"
 );
 
@@ -73,7 +73,7 @@ const voiceCacheVersions = voiceConsumerSources.flatMap((source) =>
 );
 assert.deepEqual(
   [...new Set(voiceCacheVersions)],
-  ["41"],
+  ["44"],
   "all voice consumers must share one voice-guidance module instance"
 );
 
@@ -137,6 +137,9 @@ for (const locale of ["zh-SG", "ms-SG", "ta-SG"]) {
     "Okay. I will leave the exercise open. Choose Finish exercise and check in when you are ready.",
     "You said yes. The exercise is marked finished and your check-in is ready.",
     "Rep 10. You’re done with Half Squats. Your next exercise is Calf Raises.",
+    "To pause for a rest without returning to your device, say Hey Guide, I need a rest.",
+    "Your camera guide is paused for a rest. Your recognized repetitions are kept. Select Resume camera guide when you are ready to continue.",
+    "Camera tracking and AI questions are active together. Say “Hey Guide” to ask something, or say “Hey Guide, I need a rest” to pause. Choose Finish exercise and check in when done.",
   ]) {
     assert.notEqual(
       translateText(source, locale),

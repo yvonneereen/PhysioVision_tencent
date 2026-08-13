@@ -1182,6 +1182,9 @@ Exercise: {session.exercise.name}
 Date: {session.started_at.strftime('%Y-%m-%d')}
 Sets completed: {session.sets_completed}/{session.sets_target}
 Reps completed: {session.reps_completed}/{session.reps_target}
+Minimum repetitions for completion: {session.reps_minimum or session.reps_target}
+Early stop reason: {session.stop_reason or 'Not recorded'}
+Early stop review flag: {session.stop_requires_review}
 Quality score: {session.quality_score}/100
 Pain level reported: {session.pain_level}/10
 Movement angle summaries: {session.angle_summaries}

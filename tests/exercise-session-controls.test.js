@@ -80,9 +80,39 @@ assert.match(
   "a recognized target should offer explicit finish and not-yet choices"
 );
 assert.match(
+  markup,
+  /id="earlyStopPrompt"[\s\S]*?Can you tell me what made you stop\?[\s\S]*?data-stop-reason="pain"[\s\S]*?data-stop-reason="tired"[\s\S]*?data-stop-reason="dizzy"[\s\S]*?data-stop-reason="breathless"[\s\S]*?data-stop-reason="exercise_difficulty"/,
+  "an early finish should offer the fixed stop-reason choices"
+);
+assert.match(
+  source,
+  /function shouldAskEarlyStopReason\([\s\S]*?!exerciseSessionActive \|\| goalMetric\(engine\.exercise\)\.isHold[\s\S]*?progress\.repetitionsMinimum[\s\S]*?!progress\.reachedMinimum/,
+  "the stop-reason question should apply only to unfinished repetition doses"
+);
+assert.match(
+  source,
+  /function finishExerciseAndCheckIn\([\s\S]*?if \(!stopReason && shouldAskEarlyStopReason\(\)\)[\s\S]*?beginEarlyStopReasonPrompt\(\)[\s\S]*?pendingEarlyStopReason = stopReason;[\s\S]*?completeExerciseSession\(\)/,
+  "finishing below the minimum should stop before saving and ask for a reason"
+);
+assert.match(
+  source,
+  /function currentSessionDoseProgress\([\s\S]*?minimumRepetitionsPerSet\(dose\)[\s\S]*?currentSetReps >= repetitionsMinimum/,
+  "a ranged prescription should use its lower repetition bound for completion"
+);
+assert.match(
+  source,
+  /reason === "dizzy" \|\| reason === "breathless"[\s\S]*?deferCheckin: true[\s\S]*?renderEarlyStopSafetyOutcome/,
+  "dizziness and breathlessness should enter fixed safety instructions before the optional check-in"
+);
+assert.match(
   styles,
   /\.exercise-completion-prompt\s*\{[\s\S]*?\.exercise-completion-choices\s*\{[\s\S]*?grid-template-columns/,
   "the completion question should remain prominent and provide large choices"
+);
+assert.match(
+  styles,
+  /\.early-stop-prompt\s*\{[\s\S]*?\.early-stop-reason-choices\s*\{[\s\S]*?grid-template-columns/,
+  "the early-stop question should use prominent, large reason controls"
 );
 assert.match(
   styles,
@@ -240,6 +270,34 @@ assert.doesNotMatch(
   /clearHoldTimer\(/,
   "asking the AI must not stop a valid tracked hold"
 );
+const voiceRestSource = functionSource(
+  "pauseMovementGuideForRest",
+  "answerMovementAiQuestion"
+);
+assert.match(
+  voiceRestSource,
+  /deactivateCameraGuide\(\)/,
+  "a vocal rest request should use the existing camera pause path"
+);
+assert.doesNotMatch(
+  voiceRestSource,
+  /resetExerciseProgressForNewSession|discardExerciseSession|completeExerciseSession/,
+  "a vocal rest must preserve recognized repetitions and leave the exercise unfinished"
+);
+const answerMovementAiSource = functionSource(
+  "answerMovementAiQuestion",
+  "startMovementAiWakeListening"
+);
+assert.match(
+  answerMovementAiSource,
+  /isMovementRestRequest\(cleanedQuestion\)[\s\S]*?pauseMovementGuideForRest\(\)[\s\S]*?return;/,
+  "Hey Guide rest requests should be handled locally and stop before the AI call"
+);
+assert.ok(
+  answerMovementAiSource.indexOf("isMovementRestRequest(cleanedQuestion)")
+    < answerMovementAiSource.indexOf("sendAgentMessage(cleanedQuestion, context)"),
+  "the deterministic rest command must run before any request is sent to the AI"
+);
 assert.doesNotMatch(
   functionSource("renderFrame", "plannedSetCount"),
   /pendingSetStartCheck\)[\s\S]{0,120}!movementAiConversationActive\(\)/,
@@ -279,6 +337,16 @@ assert.match(
   functionSource("announceExerciseInstruction", "setIntegratedCameraGuideActive"),
   /handsFreeVoiceEnabled[\s\S]*?After this instruction, say Hey Guide followed by your question whenever you need help\.[\s\S]*?exerciseStartGuidance\(engine\.exercise\)/,
   "hands-free startup guidance should explain the Hey Guide wake phrase aloud before movement begins"
+);
+assert.match(
+  functionSource("announceExerciseInstruction", "setIntegratedCameraGuideActive"),
+  /say Hey Guide, I need a rest\./,
+  "hands-free startup guidance should teach the vocal rest command"
+);
+assert.doesNotMatch(
+  markup,
+  />\s*Take a rest\s*</i,
+  "the vocal rest option should not add a duplicate rest button"
 );
 assert.match(
   functionSource("renderFrame", "plannedSetCount"),

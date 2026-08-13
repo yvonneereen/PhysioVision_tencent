@@ -58,7 +58,9 @@ class PrescriptionSerializer(serializers.ModelSerializer):
             session for session in sessions
             if session.ended_at
             and session.sets_completed >= session.sets_target
-            and session.reps_completed >= session.reps_target
+            and session.reps_completed >= (
+                session.reps_minimum or session.reps_target
+            )
         ]
 
     def get_exercise_completed(self, obj):
