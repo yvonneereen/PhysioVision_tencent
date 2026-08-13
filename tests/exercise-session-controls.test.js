@@ -1253,6 +1253,36 @@ assert.match(
   /cancelCameraSetupCountdown/,
   "the high-pain branch should clear any pending camera countdown"
 );
+assert.match(
+  beginSafetySource,
+  /ensureConfirmedPainSafetyCheckin/,
+  "a confirmed concerning pain score should be saved before the safety questions are completed",
+);
+
+const confirmedSafetyPainSource = functionSource(
+  "confirmedPainSafetyPayload",
+  "persistPainSafetyInterview"
+);
+assert.match(
+  confirmedSafetyPainSource,
+  /status: "incomplete"[\s\S]*?requires_review: true/,
+  "an unfinished pain safety check should remain visible for clinician review",
+);
+assert.match(
+  confirmedSafetyPainSource,
+  /postPainCheckin\([\s\S]*?confirmedPainSafetyPayload/,
+  "the confirmed pain score should create a standalone pain check-in",
+);
+
+const persistSafetySource = functionSource(
+  "persistPainSafetyInterview",
+  "renderPainSafetyOutcome"
+);
+assert.match(
+  persistSafetySource,
+  /ensureConfirmedPainSafetyCheckin[\s\S]*?confirmedCheckin\?\.id[\s\S]*?updatePainCheckin/,
+  "completed safety answers should update the original pain record instead of creating a duplicate",
+);
 
 assert.match(
   source,
@@ -1302,6 +1332,21 @@ assert.match(
   outcomeSource,
   /being saved and flagged for \$\{connection\.name\} to review[\s\S]*?not monitoring this in real time[\s\S]*?will not be changed automatically/,
   "a linked patient should be told that a severe report is flagged without implying real-time monitoring or plan changes"
+);
+assert.match(
+  outcomeSource,
+  /connection\.linked[\s\S]*?consider booking a session with \$\{connection\.name\}/,
+  "a patient linked by physiotherapist code should be invited to book with their care professional",
+);
+assert.match(
+  outcomeSource,
+  /Pain level \$\{outcomeState\.painLevel\}\/10 saved and flagged for \$\{connection\.name\} to review/,
+  "the safety outcome should confirm the exact saved pain level after persistence succeeds",
+);
+assert.match(
+  outcomeSource,
+  /save not confirmed[\s\S]*?could not be saved or flagged/,
+  "the safety outcome must not claim a failed save was recorded or flagged",
 );
 assert.match(
   outcomeSource,

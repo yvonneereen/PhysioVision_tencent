@@ -25,7 +25,7 @@ import {
   mergeConsultationTranscript,
   shouldShowPhysiotherapistRequest,
   walkingConfidencePlanNeedsRefresh,
-} from "./patient-dashboard-state.js?v=14";
+} from "./patient-dashboard-state.js?v=15";
 import { saveProfile } from "./personalization.js?v=13";
 import { getLocale, translateText } from "./i18n.js?v=38";
 import { voiceGuidance } from "./voice-guidance.js?v=45";

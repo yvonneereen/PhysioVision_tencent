@@ -123,6 +123,8 @@ export function analysePatientTrend({
   focusSessionId = null,
 } = {}) {
   const sortedSessions = newestFirst(sessions, "started_at");
+  const sortedPainCheckins = newestFirst(painCheckins, "checked_at");
+  const latestReportedPain = number(sortedPainCheckins[0]?.pain_level);
   const requestedSession = focusSessionId
     ? sortedSessions.find((session) => recordId(session.id) === recordId(focusSessionId))
     : null;
@@ -294,7 +296,9 @@ export function analysePatientTrend({
     reason,
     sessionsThisWeek,
     averageQuality: average(qualityValues),
-    latestPain: painValues[0] ?? null,
+    // The latest pain card is a pain diary value, not an exercise-completion
+    // value. Include a pre-exercise safety stop even when no Session was made.
+    latestPain: latestReportedPain,
     qualityDelta,
     painDelta,
     latestPainChange: painResponseValues[0] ?? null,

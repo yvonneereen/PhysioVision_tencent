@@ -145,7 +145,7 @@ assert.equal(pairedPainTrend.latestPainChange, 2);
 assert.deepEqual(pairedPainTrend.painResponseSeries, [-1, 0, 2]);
 assert.equal(pairedPainTrend.latestRecovery, "worse");
 
-const unlinkedPainIsExcluded = analysePatientTrend({
+const standaloneSafetyPainIsVisibleButExcludedFromExerciseTrend = analysePatientTrend({
   sessions: dates.map((_, index) => session(index)),
   painCheckins: dates.map((checked_at) => ({
     timing: "after",
@@ -155,8 +155,16 @@ const unlinkedPainIsExcluded = analysePatientTrend({
   })),
 });
 
-assert.equal(unlinkedPainIsExcluded.latestPain, null);
-assert.equal(unlinkedPainIsExcluded.reason, null);
+assert.equal(
+  standaloneSafetyPainIsVisibleButExcludedFromExerciseTrend.latestPain,
+  10,
+  "the latest pain card must include a safety check recorded without an exercise session",
+);
+assert.equal(
+  standaloneSafetyPainIsVisibleButExcludedFromExerciseTrend.reason,
+  null,
+  "a standalone check-in must not be treated as a completed exercise pain-response trend",
+);
 
 const firstRealMeasurement = analysePatientTrend({
   sessions: [session(0, { quality_score: 82 })],

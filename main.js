@@ -41,7 +41,7 @@ import {
   sendAgentMessage,
   updatePainCheckin,
 } from "./api.js?v=35";
-import { analysePatientTrend } from "./patient-dashboard-state.js?v=14";
+import { analysePatientTrend } from "./patient-dashboard-state.js?v=15";
 import { DRAFT_EXERCISES } from "./exercises/catalog.js?v=3";
 import { translateText } from "./i18n.js?v=38";
 import {
@@ -6704,6 +6704,10 @@ function beginPainSafetyInterview() {
   painCheckinState.continuation = "";
   painCheckinState.calibrationTrigger = null;
   painCheckinState.safetyAnswers = createPainSafetyAnswers();
+  // Persist the confirmed pain report before asking any follow-up questions.
+  // A patient may need to leave the flow to seek help, and a pre-exercise
+  // report must not depend on an exercise Session row that will never exist.
+  void ensureConfirmedPainSafetyCheckin(painCheckinState);
   renderPainSafetyStage("urgent", { announceReassurance: true });
 }
 
@@ -6784,8 +6788,57 @@ function painSafetyCheckinPayload(state, reportForPhysiotherapist) {
     },
     requires_review:
       answers.outcome !== "monitor" || reportForPhysiotherapist,
-    checked_at: new Date().toISOString(),
+    checked_at: state.confirmedPainCheckedAt || new Date().toISOString(),
   };
+}
+
+function confirmedPainSafetyPayload(state) {
+  const answers = state.safetyAnswers ?? createPainSafetyAnswers();
+  state.confirmedPainCheckedAt ||= new Date().toISOString();
+  return {
+    pain_level: state.painLevel,
+    timing: state.context,
+    recovery_status: state.recoveryStatus,
+    safety_follow_up: {
+      status: "incomplete",
+      exercise_id: answers.exerciseId,
+      exercise_name: answers.exerciseName,
+      reps_completed: answers.repsCompleted,
+      set_number: answers.setNumber,
+      stop_reason: answers.stopReason,
+    },
+    // A confirmed score that opened this safety flow must be visible for
+    // clinical review even if the patient cannot finish the questionnaire.
+    requires_review: true,
+    checked_at: state.confirmedPainCheckedAt,
+  };
+}
+
+function ensureConfirmedPainSafetyCheckin(state = painCheckinState) {
+  if (!state || !Number.isInteger(state.painLevel)) {
+    return Promise.resolve(null);
+  }
+  if (state.confirmedPainSavePromise) return state.confirmedPainSavePromise;
+
+  state.confirmedPainSavePromise = (async () => {
+    const session = state.context === "after"
+      ? await (completedExerciseSessionPromise ?? Promise.resolve(null))
+      : null;
+    return postPainCheckin({
+      ...confirmedPainSafetyPayload(state),
+      ...(session?.id ? { session: session.id } : {}),
+    });
+  })()
+    .then((savedCheckin) => {
+      state.confirmedPainCheckin = savedCheckin;
+      state.confirmedPainSaved = true;
+      return savedCheckin;
+    })
+    .catch(() => {
+      state.confirmedPainSaveFailed = true;
+      return null;
+    });
+  return state.confirmedPainSavePromise;
 }
 
 function persistPainSafetyInterview({
@@ -6806,10 +6859,14 @@ function persistPainSafetyInterview({
     const session = state.context === "after"
       ? await (completedExerciseSessionPromise ?? Promise.resolve(null))
       : null;
-    return postPainCheckin({
+    const completedPayload = {
       ...painSafetyCheckinPayload(state, effectiveReport),
       ...(session?.id ? { session: session.id } : {}),
-    });
+    };
+    const confirmedCheckin = await ensureConfirmedPainSafetyCheckin(state);
+    return confirmedCheckin?.id
+      ? updatePainCheckin(confirmedCheckin.id, completedPayload)
+      : postPainCheckin(completedPayload);
   })()
     .then((savedCheckin) => {
       state.safetySaved = true;
@@ -6836,6 +6893,7 @@ function renderPainSafetyOutcome(forcedOutcome = "") {
   painSafetyChoicesEl.replaceChildren();
   painSafetyChoicesEl.classList.remove("is-body-map");
 
+  const connection = physiotherapistConnectionForSafetyCheck();
   let heading = "End this exercise for today";
   let message =
     "Your pain increase has been recorded. I recommend ending this exercise for today and monitoring how you feel.";
@@ -6852,18 +6910,19 @@ function renderPainSafetyOutcome(forcedOutcome = "") {
       heading = "Pause today’s programme and seek prompt advice";
       message =
         "Your follow-up answers did not confirm an emergency warning sign, but one or more signs could not be ruled out.";
-      help =
-        "Do not continue exercising today. Contact a qualified healthcare professional. If you develop chest pressure, difficulty breathing, fainting, sudden weakness or numbness, or cannot get up safely, call 995 now.";
+      help = connection.linked
+        ? `Do not continue exercising today. Consider booking a session with ${connection.name} promptly. If you develop chest pressure, difficulty breathing, fainting, sudden weakness or numbness, or cannot get up safely, call 995 now.`
+        : "Do not continue exercising today. Consider booking a session with a qualified healthcare professional promptly. If you develop chest pressure, difficulty breathing, fainting, sudden weakness or numbness, or cannot get up safely, call 995 now.";
     } else {
       heading = "Pause today’s programme and seek professional advice";
       message =
         "The pain has not improved after stopping, is substantial, or you may need help moving safely.";
-      help =
-        "Please pause today’s programme and consider contacting a qualified healthcare professional. This is not a diagnosis.";
+      help = connection.linked
+        ? `Please pause today’s programme and consider booking a session with ${connection.name}. This is not a diagnosis.`
+        : "Please pause today’s programme and consider booking a session with a qualified healthcare professional. This is not a diagnosis.";
     }
   }
 
-  const connection = physiotherapistConnectionForSafetyCheck();
   const needsProfessionalReview = outcome !== "monitor";
   let pathwayAdvice = "";
   if (needsProfessionalReview && connection.linked) {
@@ -6880,7 +6939,7 @@ function renderPainSafetyOutcome(forcedOutcome = "") {
   painSafetyHeadingEl.textContent = heading;
   painSafetyMessageEl.textContent = message;
   painSafetyQuestionEl.textContent = needsProfessionalReview && connection.linked
-    ? "This safety check is being recorded for physiotherapist review"
+    ? `Saving pain level ${painCheckinState.painLevel}/10 and this safety check for physiotherapist review`
     : connection.linked
       ? "Would you like me to prepare this report for your physiotherapist?"
       : needsProfessionalReview
@@ -6918,11 +6977,39 @@ function renderPainSafetyOutcome(forcedOutcome = "") {
       reportForPhysiotherapist: connection.linked,
     }).then((saved) => {
       if (painCheckinState !== outcomeState || !isPainSafetyStage()) return;
-      voiceCheckinStatusEl.textContent = saved
-        ? connection.linked
+      if (saved) {
+        renderRecordedPain(outcomeState);
+        painSafetyQuestionEl.textContent = connection.linked
+          ? `Pain level ${outcomeState.painLevel}/10 saved and flagged for ${connection.name} to review`
+          : `Pain level ${outcomeState.painLevel}/10 and safety check saved`;
+        const savedPathwayAdvice = connection.linked
+          ? `Your pain level and safety answers have been saved and flagged for ${connection.name} to review. Your physiotherapist is not monitoring this in real time, so do not wait for a reply before seeking urgent help. Your prescribed plan will not be changed automatically.`
+          : "Your pain level and safety answers have been saved. Seek professional advice before exercising again.";
+        painSafetyHelpEl.textContent = [help, savedPathwayAdvice]
+          .filter(Boolean)
+          .join(" ");
+        voiceCheckinStatusEl.textContent = connection.linked
           ? "Saved and flagged for physiotherapist review. This is not real-time monitoring."
-          : "Safety check saved. Seek professional advice before exercising again."
-        : "The safety check could not be saved. Follow the safety advice and choose Finish to try again.";
+          : "Pain level and safety check saved. Seek professional advice before exercising again.";
+      } else {
+        if (outcomeState.confirmedPainSaved) {
+          renderRecordedPain(outcomeState);
+          painCheckinTitleEl.textContent =
+            "Your pain level is saved — safety answers need another save attempt";
+          painSafetyQuestionEl.textContent = connection.linked
+            ? `Pain level ${outcomeState.painLevel}/10 saved and flagged for ${connection.name}; the completed answers were not confirmed`
+            : `Pain level ${outcomeState.painLevel}/10 saved; the completed safety answers were not confirmed`;
+          voiceCheckinStatusEl.textContent =
+            "Your pain level is saved. Choose Finish safety check to retry saving the completed answers.";
+        } else {
+          painCheckinTitleEl.textContent =
+            "Your safety check is complete — save not confirmed";
+          painSafetyQuestionEl.textContent =
+            `Pain level ${outcomeState.painLevel}/10 could not be saved or flagged`;
+          voiceCheckinStatusEl.textContent =
+            "The safety check could not be saved. Follow the safety advice and choose Finish to try again.";
+        }
+      }
     });
   }
 }
@@ -6994,6 +7081,7 @@ function acceptPainSafetyResponse(response) {
 
 function finishPainSafetyInterview({ reportForPhysiotherapist = false } = {}) {
   if (!painCheckinState?.safetyAnswers) return;
+  const safetyState = painCheckinState;
   const connection = physiotherapistConnectionForSafetyCheck();
   const effectiveReport = Boolean(
     reportForPhysiotherapist
@@ -7018,7 +7106,6 @@ function finishPainSafetyInterview({ reportForPhysiotherapist = false } = {}) {
   preExerciseCheckinCompleted = false;
   confirmedPreExercisePain = null;
   hidePainCheckin();
-  renderRecordedPain(completed);
   statusEl.textContent = "Exercise paused after pain safety check";
   cameraSessionHintEl.textContent =
     "The exercise was not marked finished, but it should not be restarted today.";
@@ -7029,6 +7116,28 @@ function finishPainSafetyInterview({ reportForPhysiotherapist = false } = {}) {
   speakMovementGuide(savedMessage, {
     key: `checkin:${completed.context}:safety-saved:${effectiveReport}`,
     interrupt: true,
+  });
+  void safetySavePromise.then((saved) => {
+    if (saved) {
+      renderRecordedPain(completed);
+      setFeedbackBanner(
+        "tracking",
+        effectiveReport
+          ? `Pain level ${completed.painLevel}/10 saved and flagged for physiotherapist review`
+          : `Pain level ${completed.painLevel}/10 and safety check saved`,
+      );
+    } else if (safetyState.confirmedPainSaved) {
+      renderRecordedPain(completed);
+      setFeedbackBanner(
+        "tracking",
+        `Pain level ${completed.painLevel}/10 was saved, but the completed safety answers need another save attempt.`,
+      );
+    } else {
+      setFeedbackBanner(
+        "tracking",
+        `Pain level ${completed.painLevel}/10 could not be saved. Check your connection and try again.`,
+      );
+    }
   });
   if (completed.context === "after") {
     completed.recoveryStatus = answers.restTrend || completed.recoveryStatus;
