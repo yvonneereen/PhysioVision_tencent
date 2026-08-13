@@ -494,12 +494,7 @@ html[lang="en-SG"] body {
   border: 1px solid var(--mint);
   border-radius: inherit;
   content: "";
-  animation: pulse 2s infinite ease-out;
-}
-
-@keyframes pulse {
-  0% { opacity: 0.9; transform: scale(0.5); }
-  75%, 100% { opacity: 0; transform: scale(1.45); }
+  opacity: 0.45;
 }
 
 .hero h1 {
@@ -612,7 +607,6 @@ html[lang="en-SG"] body {
   height: 7%;
   border-radius: 50%;
   background: rgba(43, 53, 45, 0.16);
-  filter: blur(12px);
   content: "";
 }
 
@@ -783,7 +777,6 @@ html[lang="en-SG"] body {
   z-index: 2;
   width: 63%;
   max-height: 88%;
-  filter: drop-shadow(0 18px 10px rgba(31, 49, 44, 0.14));
 }
 
 .tracked-person .skin { fill: #b97359; }
@@ -820,10 +813,10 @@ html[lang="en-SG"] body {
   border: 1px solid rgba(255, 255, 255, 0.6);
   border-radius: 12px;
   color: var(--ink);
-  background: rgba(255, 255, 255, 0.86);
   box-shadow: 0 14px 34px rgba(28, 54, 49, 0.16);
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
+  /* Avoid continuously recompositing a blurred layer while nearby SVG
+     elements move. That combination can overwhelm Safari's GPU process. */
+  background: rgba(255, 255, 255, 0.97);
   font-size: 1rem;
   line-height: 1.25;
 }
@@ -841,18 +834,11 @@ html[lang="en-SG"] body {
 .tracking-card-top {
   top: 18%;
   right: 4%;
-  animation: float 4s ease-in-out infinite;
 }
 
 .tracking-card-bottom {
   bottom: 15%;
   left: 6%;
-  animation: float 4.5s 0.8s ease-in-out infinite;
-}
-
-@keyframes float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-7px); }
 }
 
 .tracking-icon {
@@ -4049,12 +4035,7 @@ details.metrics summary {
   border-radius: 50%;
   background: var(--coral);
   box-shadow: 0 0 0 1px var(--ink);
-  animation: orbitMotion 7s ease-in-out infinite;
-}
-
-@keyframes orbitMotion {
-  0%, 100% { transform: translate(-175px, 70px); }
-  50% { transform: translate(175px, 190px); }
+  transform: translate(-70px, 120px);
 }
 
 .safety-shield {

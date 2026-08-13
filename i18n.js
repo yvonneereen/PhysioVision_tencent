@@ -1033,8 +1033,11 @@ let activeLocale = preferredStoredLocale();
 let observer = null;
 let translationPassActive = false;
 let initialized = false;
+let translationFrame = null;
+const pendingTranslationRoots = new Set();
 const textNodeState = new WeakMap();
 const attributeState = new WeakMap();
+const TRANSLATION_RUNTIME_KEY = "__physioVisionTranslationRuntimeV1";
 
 export function getLocale() {
   return activeLocale;
@@ -1451,6 +1454,31 @@ function translateTree(root = globalThis.document?.body) {
   }
 }
 
+function scheduleTranslation(root) {
+  if (!root || shouldIgnore(root)) return;
+  const element = root.nodeType === 3 ? root.parentElement : root;
+  if (!element) return;
+
+  // Keep only the highest changed roots. A single dynamic card can produce
+  // dozens of child mutations, but it needs only one translation pass.
+  for (const pending of pendingTranslationRoots) {
+    if (pending === element || pending.contains?.(element)) return;
+    if (element.contains?.(pending)) pendingTranslationRoots.delete(pending);
+  }
+  pendingTranslationRoots.add(element);
+  if (translationFrame !== null) return;
+
+  const flush = () => {
+    translationFrame = null;
+    const roots = [...pendingTranslationRoots];
+    pendingTranslationRoots.clear();
+    roots.forEach((changedRoot) => translateTree(changedRoot));
+  };
+  translationFrame = globalThis.requestAnimationFrame
+    ? globalThis.requestAnimationFrame(flush)
+    : globalThis.setTimeout(flush, 0);
+}
+
 function syncSelectors() {
   document.querySelectorAll("[data-language-selector]").forEach((select) => {
     select.value = activeLocale;
@@ -1498,6 +1526,9 @@ export function setLocale(locale, { persist = true, announce = true } = {}) {
 function initialize() {
   if (initialized || !globalThis.document?.body) return;
   initialized = true;
+  const previousRuntime = globalThis.window?.[TRANSLATION_RUNTIME_KEY];
+  previousRuntime?.observer?.disconnect?.();
+  previousRuntime?.cancelPending?.();
   document.documentElement.lang = activeLocale;
   syncSelectors();
   translateTree(document.body);
@@ -1505,9 +1536,9 @@ function initialize() {
     if (translationPassActive) return;
     mutations.forEach((mutation) => {
       if (mutation.type === "characterData") {
-        translateTextNode(mutation.target);
+        scheduleTranslation(mutation.target);
       } else {
-        mutation.addedNodes.forEach((node) => translateTree(node));
+        mutation.addedNodes.forEach((node) => scheduleTranslation(node));
       }
     });
   });
@@ -1516,6 +1547,21 @@ function initialize() {
     characterData: true,
     subtree: true,
   });
+  if (globalThis.window) {
+    globalThis.window[TRANSLATION_RUNTIME_KEY] = {
+      observer,
+      cancelPending() {
+        if (translationFrame === null) return;
+        if (globalThis.cancelAnimationFrame) {
+          globalThis.cancelAnimationFrame(translationFrame);
+        } else {
+          globalThis.clearTimeout?.(translationFrame);
+        }
+        translationFrame = null;
+        pendingTranslationRoots.clear();
+      },
+    };
+  }
 }
 
 if (globalThis.document) {

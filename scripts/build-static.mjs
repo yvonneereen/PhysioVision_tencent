@@ -14,6 +14,7 @@ const frontendEntries = [
   "text-size.js",
   "agent-chat.js",
   "api.js",
+  "app-bootstrap.js",
   "auth.js",
   "calibration-policy.js",
   "care-workflow.js",

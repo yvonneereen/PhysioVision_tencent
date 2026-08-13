@@ -14,7 +14,7 @@ import {
   verifyLogin,
   verifyPasswordResetCode,
   warmApi,
-} from "./api.js?v=32";
+} from "./api.js?v=35";
 import { getRoleNavigationState } from "./role-ui.js?v=17";
 
 const shell        = document.getElementById("auth-modal");
@@ -164,23 +164,27 @@ function clearError(el) {
   el.style.display = "none";
 }
 
-function routeAfterAuthentication(user) {
-  window.setTimeout(() => {
-    if (user?.role === "clinician") {
-      document
-        .querySelector("[data-open='therapist-view']")
-        ?.click();
-      return;
-    }
-    if (typeof window.pvShowPatientDashboard === "function") {
-      void window.pvShowPatientDashboard(user);
-      return;
-    }
-    window.dispatchEvent(new CustomEvent(
-      "physiovision:patient-dashboard-requested",
-      { detail: { user } },
-    ));
-  }, 0);
+async function routeAfterAuthentication(user) {
+  try {
+    await window.pvLoadAuthenticatedApp?.(user?.role);
+  } catch (error) {
+    console.error("The signed-in workspace could not be loaded", error);
+    return;
+  }
+  if (user?.role === "clinician") {
+    document
+      .querySelector("[data-open='therapist-view']")
+      ?.click();
+    return;
+  }
+  if (typeof window.pvShowPatientDashboard === "function") {
+    void window.pvShowPatientDashboard(user);
+    return;
+  }
+  window.dispatchEvent(new CustomEvent(
+    "physiovision:patient-dashboard-requested",
+    { detail: { user } },
+  ));
 }
 
 function selectLoginTab() {
@@ -317,7 +321,7 @@ loginForm.addEventListener("submit", async (e) => {
     const user = await completeAuthentication();
     hideModal();
     updateAuthButtons(true, user);
-    routeAfterAuthentication(user);
+    void routeAfterAuthentication(user);
   } catch (err) {
     clearError(loginStatus);
     if (err.data?.code === "email_not_verified") {
@@ -457,7 +461,7 @@ verificationForm.addEventListener("submit", async (e) => {
     const user = await completeAuthentication();
     hideModal();
     updateAuthButtons(true, user);
-    routeAfterAuthentication(user);
+    void routeAfterAuthentication(user);
   } catch (err) {
     showError(
       verificationError,

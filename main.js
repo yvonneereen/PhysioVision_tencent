@@ -40,10 +40,10 @@ import {
   respondEmergencyAlert,
   sendAgentMessage,
   updatePainCheckin,
-} from "./api.js?v=32";
+} from "./api.js?v=35";
 import { analysePatientTrend } from "./patient-dashboard-state.js?v=14";
 import { DRAFT_EXERCISES } from "./exercises/catalog.js?v=3";
-import { translateText } from "./i18n.js?v=37";
+import { translateText } from "./i18n.js?v=38";
 import {
   isMovementRestRequest,
   parseConfirmationResponse,

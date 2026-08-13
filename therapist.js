@@ -7,7 +7,7 @@ import {
   getClinicianAiSession, getClinicianAiSessions, sendAgentMessage,
   getTriageQueue, claimTriagePatient, declineTriagePatient,
   dischargePatient,
-} from "./api.js?v=34";
+} from "./api.js?v=35";
 import { excludeRosterPatientsFromTriage } from "./therapist-triage-state.js?v=1";
 import { formatClinicalAssistantText } from "./clinical-ai-format.js?v=1";
 

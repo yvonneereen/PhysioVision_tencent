@@ -14,7 +14,7 @@ import {
   isLoggedIn,
   selectPatientPathway,
   sendCareMessage,
-} from "./api.js?v=32";
+} from "./api.js?v=35";
 import {
   analysePatientTrend,
   effectivePatientPathway,
@@ -27,7 +27,7 @@ import {
   walkingConfidencePlanNeedsRefresh,
 } from "./patient-dashboard-state.js?v=14";
 import { saveProfile } from "./personalization.js?v=13";
-import { getLocale, translateText } from "./i18n.js?v=37";
+import { getLocale, translateText } from "./i18n.js?v=38";
 import { voiceGuidance } from "./voice-guidance.js?v=45";
 import { EXERCISE_MAP } from "./exercises/registry.js?v=62";
 import {
@@ -325,6 +325,12 @@ function startExercise(
     )],
   };
 
+  // The camera and tracking engine is deliberately absent from initial page
+  // startup. Begin fetching it only when the patient actually starts an
+  // exercise; main.js consumes the pending request once it has loaded.
+  void window.pvLoadMovementApp?.().catch((error) => {
+    console.error("Movement guide could not be loaded", error);
+  });
   window.physioVisionPendingPracticeRequest = practiceRequest;
 
   if (typeof window.physioVisionOpenPractice === "function") {
