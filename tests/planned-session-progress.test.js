@@ -165,8 +165,8 @@ assert.match(
 );
 assert.match(
   mainSource,
-  /function continueToNextExercise\(\)[\s\S]*?exSelect\.value = nextExerciseId[\s\S]*?dispatchEvent\(new Event\("change"/,
-  "continuing should open the next exercise without returning home",
+  /function continueToNextExercise\(\)[\s\S]*?exSelect\.value = nextExerciseId[\s\S]*?dispatchEvent\(new Event\("change"[\s\S]*?openCalibrationFlow\(\{ currentTarget: openCalibrationPrimary \}\)/,
+  "continuing should select the next exercise and open its camera setup automatically",
 );
 assert.match(
   mainSource,

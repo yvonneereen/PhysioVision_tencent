@@ -199,6 +199,57 @@ class PrescriptionAccessTests(APITestCase):
         self.assertEqual(patient_list.status_code, 200)
         self.assertEqual(patient_list.data, [])
 
+    def test_clinician_patient_roster_lists_every_active_prescription(self):
+        second_exercise = Exercise.objects.create(
+            id='second-movement',
+            name='Second Movement',
+            category='strength',
+            camera_direction='front',
+            rep_rule='start → finish → start',
+            tracked_angles_config={},
+            phases_config=[],
+            cues_config={},
+            sort_order=2,
+        )
+        third_exercise = Exercise.objects.create(
+            id='third-movement',
+            name='Third Movement',
+            category='mobility',
+            camera_direction='side',
+            rep_rule='start → finish → start',
+            tracked_angles_config={},
+            phases_config=[],
+            cues_config={},
+            sort_order=3,
+        )
+        for exercise in (self.exercise, second_exercise, third_exercise):
+            Prescription.objects.create(
+                patient=self.patient,
+                clinician=self.clinician,
+                exercise=exercise,
+                sets=1,
+                reps=10,
+                days_per_week='4',
+                is_active=True,
+                valid_from=timezone.localdate(),
+            )
+
+        self.client.force_authenticate(self.clinician_user)
+        response = self.client.get('/api/patients/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+        row = response.data[0]
+        self.assertEqual(len(row['active_prescriptions']), 3)
+        self.assertEqual(
+            [item['exercise_name'] for item in row['active_prescriptions']],
+            ['Test Movement', 'Second Movement', 'Third Movement'],
+        )
+        self.assertEqual(
+            row['active_prescription'],
+            row['active_prescriptions'][0],
+        )
+
     def test_reviewed_ai_draft_is_edited_assigned_and_sent_to_patient(self):
         draft = SlackPlanDraft.objects.create(
             patient=self.patient,

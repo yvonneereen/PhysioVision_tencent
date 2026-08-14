@@ -7,7 +7,7 @@ import {
   measureHandExerciseFrame,
   measurePoseExerciseFrame,
 } from "./exercise-tracking.js?v=2";
-import { FeedbackEngine, EXERCISES } from "./feedback/engine.js?v=52";
+import { FeedbackEngine, EXERCISES } from "./feedback/engine.js?v=53";
 import { POSES } from "./poses.js";
 import {
   calibrationFrameMatchesPhase,
@@ -43,7 +43,7 @@ import {
 } from "./api.js?v=36";
 import { analysePatientTrend } from "./patient-dashboard-state.js?v=16";
 import { DRAFT_EXERCISES } from "./exercises/catalog.js?v=3";
-import { translateText } from "./i18n.js?v=40";
+import { translateText } from "./i18n.js?v=41";
 import {
   isMovementRestRequest,
   isMovementResumeRequest,
@@ -1338,6 +1338,7 @@ let completedSessionReps = 0;
 let pendingSetStartCheck = null;
 let sessionAllSetsComplete = false;
 let lastFeedbackResult = null;
+let pendingExerciseCompletionAnnouncement = null;
 let exerciseCompletionConfirmationActive = false;
 let exerciseCompletionConfirmationGeneration = 0;
 let earlyStopPromptActive = false;
@@ -1958,7 +1959,7 @@ function exerciseStartGuidance(exercise = engine?.exercise) {
     return (
       "Keep both feet flat and keep the chair beside you. Bend both knees and hips slowly "
       + "as if sitting back toward the chair, only as far as comfortable, "
-      + "then stand tall to complete one repetition. Begin now."
+      + "then stand tall to complete one repetition."
     );
   }
   return exerciseSpokenInstruction(exercise);
@@ -2001,7 +2002,7 @@ function queueSpokenMovementCue(state, cue, timestampMs) {
     spokenCoachingCandidate = null;
     return;
   }
-  if (!["adjust", "tracking", "visibility", "position", "ready"].includes(state)) {
+  if (!["adjust", "range", "tracking", "visibility", "position", "ready"].includes(state)) {
     spokenCoachingCandidate = null;
     return;
   }
@@ -2016,7 +2017,10 @@ function queueSpokenMovementCue(state, cue, timestampMs) {
     return;
   }
 
-  const stableForMs = state === "ready" ? 2500 : 800;
+  // A person can pass through the bottom of a squat quickly. Confirm the
+  // measured depth over several camera frames, then coach it soon enough for
+  // the next repetition rather than waiting for a long static hold.
+  const stableForMs = state === "ready" ? 2500 : state === "range" ? 250 : 800;
   const repeatAfterMs = state === "adjust" ? 8000 : 8000;
   if (
     timestampMs - spokenCoachingCandidate.firstSeenAt < stableForMs ||
@@ -2302,15 +2306,19 @@ function beginExerciseCompletionConfirmation(feedback, completion) {
     isLastPlannedSet: true,
     completionMessage: completion.spokenMessage,
   });
+  const finishCompletionAnnouncement = () => {
+    spokenRepCount = Math.max(spokenRepCount, feedback.repCount);
+    askQuestion();
+  };
   const spoken = speakMovementGuide(completionAnnouncement, {
     key: `completion:${feedback.exercise.id}:${completedSetCount}:${feedback.repCount}`,
     interrupt: true,
-    onEnd: askQuestion,
+    onEnd: finishCompletionAnnouncement,
   });
-  if (!spoken) askQuestion();
+  if (!spoken) finishCompletionAnnouncement();
   else {
     window.setTimeout(() => {
-      if (!voiceGuidance.isSpeaking) askQuestion();
+      if (!voiceGuidance.isSpeaking) finishCompletionAnnouncement();
     }, 14000);
   }
 }
@@ -2528,10 +2536,13 @@ function acceptEarlyStopReason(reason) {
 function processPendingRepAnnouncements() {
   if (
     repAnnouncementActive
-    || !pendingRepAnnouncements.length
     || movementTrackingPausedForInstruction
     || movementAiConversationActive()
   ) {
+    return;
+  }
+  if (!pendingRepAnnouncements.length) {
+    announcePendingExerciseCompletion();
     return;
   }
   const announcement = pendingRepAnnouncements[0];
@@ -2560,6 +2571,20 @@ function processPendingRepAnnouncements() {
     }
   );
   repAnnouncementActive = spoken;
+  if (!spoken) {
+    pendingRepAnnouncements.shift();
+    repAnnouncementActive = false;
+    window.setTimeout(processPendingRepAnnouncements, 0);
+  }
+}
+
+function announcePendingExerciseCompletion() {
+  if (!pendingExerciseCompletionAnnouncement) return false;
+  const { feedback, completion } = pendingExerciseCompletionAnnouncement;
+  pendingExerciseCompletionAnnouncement = null;
+  stopMovementAiGuide();
+  beginExerciseCompletionConfirmation(feedback, completion);
+  return true;
 }
 
 function queueRepAnnouncements(feedback, metric) {
@@ -2568,89 +2593,34 @@ function queueRepAnnouncements(feedback, metric) {
   const setNumber = completedSetCount + 1;
   const plannedSets = plannedSetCount(feedback.exercise);
 
-  if (movementAiConversationActive()) {
-    // Keep the visual/session count current without speaking over the user's
-    // question or replaying every missed number after the AI answer.
-    pendingRepAnnouncements.length = 0;
-    queuedSpokenRepCount = Math.max(queuedSpokenRepCount, detectedReps);
-    spokenRepCount = Math.max(spokenRepCount, detectedReps);
-    const measured = metric.isHold
-      ? detectedReps * metric.perHold
-      : detectedReps;
-    if (metric.goal !== null && measured >= metric.goal) {
-      const isLastPlannedSet = setNumber >= plannedSets;
-      if (isLastPlannedSet) return;
-      pendingRepAnnouncements.push({
-        exerciseId: feedback.exercise.id,
-        repNumber: detectedReps,
-        setNumber,
-        setGoal: metric.goal,
-        isHold: metric.isHold,
-        isLastPlannedSet,
-        completionMessage: isLastPlannedSet
-          ? exerciseCompletionGuidance(feedback.exercise).message
-          : "",
-      });
-    }
-    return;
-  }
-
   if (detectedReps <= queuedSpokenRepCount) {
     processPendingRepAnnouncements();
     return;
   }
-  const detectedMeasurement = metric.isHold
-    ? detectedReps * metric.perHold
-    : detectedReps;
-  if (metric.goal !== null && detectedMeasurement >= metric.goal) {
-    const isLastPlannedSet = setNumber >= plannedSets;
-    if (isLastPlannedSet) {
-      // The final target is announced directly by handleCompletedSet so it can
-      // interrupt an older coaching sentence instead of waiting in this queue.
-      queuedSpokenRepCount = detectedReps;
-      pendingRepAnnouncements.length = 0;
-      return;
+
+  const firstNewRep = queuedSpokenRepCount + 1;
+  const isLastPlannedSet = setNumber >= plannedSets;
+  for (let repNumber = firstNewRep; repNumber <= detectedReps; repNumber += 1) {
+    const measured = metric.isHold
+      ? repNumber * metric.perHold
+      : repNumber;
+    const reachesGoal = metric.goal !== null && measured >= metric.goal;
+    if (reachesGoal && isLastPlannedSet) {
+      // The final number is part of the completion announcement. Earlier
+      // numbers stay queued, so the guide can never jump from 8 straight to 10.
+      break;
     }
-    const finalAnnouncement = {
+    pendingRepAnnouncements.push({
       exerciseId: feedback.exercise.id,
-      repNumber: detectedReps,
+      repNumber,
       setNumber,
-      setGoal: metric.goal,
+      setGoal: reachesGoal ? metric.goal : null,
       isHold: metric.isHold,
       isLastPlannedSet,
-      completionMessage: isLastPlannedSet
-        ? exerciseCompletionGuidance(feedback.exercise).message
-        : "",
-    };
-    queuedSpokenRepCount = detectedReps;
-    if (repAnnouncementActive && pendingRepAnnouncements.length) {
-      pendingRepAnnouncements.splice(1, Infinity, finalAnnouncement);
-    } else {
-      pendingRepAnnouncements.length = 0;
-      pendingRepAnnouncements.push(finalAnnouncement);
-    }
-    processPendingRepAnnouncements();
-    return;
+      completionMessage: "",
+    });
   }
-  // Announce the count the user is actually on. If another instruction is
-  // speaking, replace any waiting numbers with the latest one instead of
-  // rapidly replaying "Rep 1, Rep 2…" after the user has moved ahead.
   queuedSpokenRepCount = detectedReps;
-  const latestAnnouncement = {
-    exerciseId: feedback.exercise.id,
-    repNumber: detectedReps,
-    setNumber,
-    setGoal: null,
-    isHold: metric.isHold,
-    isLastPlannedSet: setNumber >= plannedSets,
-    completionMessage: "",
-  };
-  if (repAnnouncementActive && pendingRepAnnouncements.length) {
-    pendingRepAnnouncements.splice(1, Infinity, latestAnnouncement);
-  } else {
-    pendingRepAnnouncements.length = 0;
-    pendingRepAnnouncements.push(latestAnnouncement);
-  }
   processPendingRepAnnouncements();
 }
 
@@ -3386,18 +3356,17 @@ function renderHandPreview(result) {
 }
 
 function presentInstructionTrackingPause(measurements, timestampMs) {
-  // A half squat is a deliberate standing → squat → standing sequence. Once a
-  // stable standing baseline exists, keep feeding that sequence while the
-  // opening instruction plays so a patient who begins early does not lose
-  // their first one or two completed repetitions. Spoken counts remain queued
-  // until the instruction finishes, so the safety/setup wording is not cut off.
-  if (engine.exercise.id === "half-squats" && measurements) {
+  // Repetition exercises use a complete, confirmed phase sequence, so they can
+  // safely count while the concise opening instruction is still playing. Hold
+  // exercises retain the baseline-only gate because their setup can resemble
+  // the target position. Spoken counts wait until the instruction finishes.
+  if (!goalMetric(engine.exercise).isHold && measurements) {
     updateFeedbackPanel(measurements, timestampMs);
     statusEl.textContent =
-      "Listen first — completed repetitions are being counted";
+      "Begin when ready — completed repetitions are already being counted";
     setFeedbackBanner(
       "ready",
-      "Listen to the instruction. Camera counting is already active."
+      "Move while you listen if you are ready. Camera counting is already active."
     );
     return;
   }
@@ -3653,21 +3622,17 @@ function handleCompletedSet(feedback) {
     const completion = exerciseCompletionGuidance(feedback.exercise);
     sessionAllSetsComplete = true;
     lastFeedbackResult = feedback;
-    pendingRepAnnouncements.length = 0;
-    repAnnouncementActive = false;
     queuedSpokenRepCount = Math.max(queuedSpokenRepCount, feedback.repCount);
-    spokenRepCount = Math.max(spokenRepCount, feedback.repCount);
     renderCameraRepProgress(feedback.exercise, feedback.repCount, {
       complete: true,
     });
     statusEl.textContent = `${feedback.exercise.name} complete`;
     setFeedbackBanner("good", completion.message);
     cameraSessionHintEl.textContent = completion.message;
-    // Completion takes priority over routine rep/form coaching. Stop the wake
-    // listener and interrupt any older sentence so the user immediately hears
-    // that they should stop exercising.
-    stopMovementAiGuide();
-    beginExerciseCompletionConfirmation(feedback, completion);
+    // Keep every earlier number in order. The final completion announcement
+    // begins as soon as the queued count immediately before it has finished.
+    pendingExerciseCompletionAnnouncement = { feedback, completion };
+    processPendingRepAnnouncements();
     return;
   }
 
@@ -3848,12 +3813,18 @@ function updateFeedbackPanel(angles, timestampMs) {
     repetitionNumber: currentCoachingRepetitionNumber(fb),
   });
   const primaryCueIsScoreable = personalizedCueDetail?.scoringEligible === true;
+  const primaryCueIsCoachingOnly = Boolean(
+    personalizedCueDetail?.guidanceAllowed === true
+    && !primaryCueIsScoreable
+  );
   const visiblePrimaryCue = personalizedCueDetail && (
     !primaryCueIsScoreable || qualityObservation.stable
   )
     ? primaryCueIsScoreable
       ? personalizedCueDetail.message
-      : "Prototype camera observation recorded for clinician review. Continue only with your approved exercise instructions."
+      : primaryCueIsCoachingOnly
+        ? personalizedCueDetail.message
+        : "Prototype camera observation recorded for clinician review. Continue only with your approved exercise instructions."
     : null;
   const personalizedCues = visiblePrimaryCue ? [visiblePrimaryCue] : [];
   cueListEl.innerHTML = personalizedCues
@@ -3925,8 +3896,15 @@ function updateFeedbackPanel(angles, timestampMs) {
       fb,
     );
   }
-  if (!qualityReminderHandled && !qualityObservation.observationOnly) {
-    queueSpokenMovementCue(bannerState, bannerCue, timestampMs);
+  if (
+    !qualityReminderHandled
+    && (!qualityObservation.observationOnly || primaryCueIsCoachingOnly)
+  ) {
+    queueSpokenMovementCue(
+      primaryCueIsCoachingOnly ? "range" : bannerState,
+      bannerCue,
+      timestampMs
+    );
   }
 
   // Symmetry warning
@@ -5102,29 +5080,27 @@ function announceExerciseInstruction(prefix = "", { onEnd = null } = {}) {
   const clinicianNote = activeDose(engine.exercise).notes;
   const spokenInstruction = localizedGuidanceParts([
     prefix,
+    goalMetric(engine.exercise).isHold
+      ? "Hold measurement starts after this instruction."
+      : "Camera repetition counting is active now, including while I give this instruction.",
+    exerciseStartGuidance(engine.exercise),
     exerciseTargetGuidance(engine.exercise),
     clinicianNote ? `Your clinician's instruction is: ${clinicianNote}` : "",
     handsFreeVoiceEnabled
-      ? "After this instruction, say Hey Guide followed by your question whenever you need help."
+      ? "Say Hey Guide for help, or Hey Guide, I need a rest."
       : "",
-    handsFreeVoiceEnabled
-      ? "To pause for a rest without returning to your device, say Hey Guide, I need a rest."
-      : "",
-    // Put the movement instruction last so its final words, "Begin now", are
-    // the signal that counting is becoming active.
-    exerciseStartGuidance(engine.exercise),
   ]);
   setMovementAiStatus(
     "coaching",
-    engine.exercise.id === "half-squats"
-      ? "Listen to the start instruction. Camera counting is already active."
-      : "Listen to the complete start instruction. Rep counting and Hey Guide will begin afterward."
+    goalMetric(engine.exercise).isHold
+      ? "Listen to the complete start instruction."
+      : "Listen while you begin. Camera repetition counting is already active."
   );
   movementTrackingPausedForInstruction = true;
   const finishInstruction = () => {
     movementTrackingPausedForInstruction = false;
     spokenCoachingCandidate = null;
-    const alreadyCounting = engine.exercise.id === "half-squats"
+    const alreadyCounting = !goalMetric(engine.exercise).isHold
       && engine.repCount > 0;
     statusEl.textContent = alreadyCounting
       ? "Instruction complete — keep going"
@@ -5412,6 +5388,7 @@ function resetSetProgress() {
   pendingSetStartCheck = null;
   sessionAllSetsComplete = false;
   lastFeedbackResult = null;
+  pendingExerciseCompletionAnnouncement = null;
   finalRepReturnPromptedSetKey = "";
   finalRepReturnPendingSetKey = "";
 }
@@ -6415,6 +6392,14 @@ function continueToNextExercise() {
     behavior: "smooth",
     block: "start",
   });
+  statusEl.textContent = "Preparing the next exercise camera guide…";
+  setFeedbackBanner(
+    "position",
+    "Stay near your device. The camera guide for the next exercise is opening automatically."
+  );
+  // Keep this inside the Continue action so Safari can reuse the user's
+  // gesture when camera permission has to be requested again.
+  void openCalibrationFlow({ currentTarget: openCalibrationPrimary });
   return true;
 }
 

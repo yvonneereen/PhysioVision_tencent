@@ -348,8 +348,8 @@ assert.match(
 );
 assert.match(
   functionSource("exerciseStartGuidance", "resetSpokenCoaching"),
-  /Keep both feet flat[\s\S]*?stand tall to complete one repetition\. Begin now\./,
-  "the concise squat instruction should end with the signal to begin moving"
+  /Keep both feet flat[\s\S]*?stand tall to complete one repetition\./,
+  "the concise squat instruction should explain one complete repetition"
 );
 assert.match(
   functionSource("exerciseTargetGuidance", "resetSpokenCoaching"),
@@ -358,17 +358,17 @@ assert.match(
 );
 assert.match(
   functionSource("announceExerciseInstruction", "setIntegratedCameraGuideActive"),
-  /exerciseTargetGuidance\(engine\.exercise\)[\s\S]*?exerciseStartGuidance\(engine\.exercise\)[\s\S]*?movementTrackingPausedForInstruction = true[\s\S]*?movementTrackingPausedForInstruction = false/,
-  "the startup instruction should retain an explicit beginning and end state"
+  /Camera repetition counting is active now[\s\S]*?exerciseStartGuidance\(engine\.exercise\)[\s\S]*?exerciseTargetGuidance\(engine\.exercise\)[\s\S]*?movementTrackingPausedForInstruction = true[\s\S]*?movementTrackingPausedForInstruction = false/,
+  "the guide should announce active counting before the movement details and retain an explicit instruction state"
 );
 assert.match(
   functionSource("announceExerciseInstruction", "setIntegratedCameraGuideActive"),
-  /handsFreeVoiceEnabled[\s\S]*?After this instruction, say Hey Guide followed by your question whenever you need help\.[\s\S]*?exerciseStartGuidance\(engine\.exercise\)/,
-  "hands-free startup guidance should explain the Hey Guide wake phrase aloud before movement begins"
+  /handsFreeVoiceEnabled[\s\S]*?Say Hey Guide for help/,
+  "hands-free startup guidance should explain the Hey Guide wake phrase concisely"
 );
 assert.match(
   functionSource("announceExerciseInstruction", "setIntegratedCameraGuideActive"),
-  /say Hey Guide, I need a rest\./,
+  /Hey Guide, I need a rest\./,
   "hands-free startup guidance should teach the vocal rest command"
 );
 assert.doesNotMatch(
@@ -383,13 +383,13 @@ assert.match(
 );
 assert.match(
   functionSource("presentInstructionTrackingPause", "renderFrame"),
-  /!engine\.startConfirmed[\s\S]*?engine\.update\(measurements, timestampMs\)/,
-  "non-squat movements should still prepare only their starting baseline during setup"
+  /!goalMetric\(engine\.exercise\)\.isHold[\s\S]*?updateFeedbackPanel\(measurements, timestampMs\)/,
+  "every repetition exercise should count complete movements during its opening instruction"
 );
 assert.match(
   functionSource("presentInstructionTrackingPause", "renderFrame"),
-  /engine\.exercise\.id === "half-squats"[\s\S]*?updateFeedbackPanel\(measurements, timestampMs\)/,
-  "complete half squats performed during the opening instruction should not be discarded"
+  /if \(!engine\.startConfirmed[\s\S]*?engine\.update\(measurements, timestampMs\)/,
+  "hold exercises should establish only their starting baseline during setup"
 );
 assert.match(
   functionSource("announceExerciseInstruction", "setIntegratedCameraGuideActive"),
@@ -422,19 +422,14 @@ assert.doesNotMatch(
   "live coaching must not repeat the full startup instruction"
 );
 assert.match(
-  source,
-  /function queueRepAnnouncements[\s\S]*?const latestAnnouncement[\s\S]*?pendingRepAnnouncements\.splice\(1, Infinity, latestAnnouncement\)/,
-  "rep announcements should skip stale waiting numbers and retain the user's latest count"
+  functionSource("queueRepAnnouncements", "startHoldTimer"),
+  /for \(let repNumber = firstNewRep; repNumber <= detectedReps; repNumber \+= 1\)[\s\S]*?pendingRepAnnouncements\.push/,
+  "every newly detected repetition should be queued in numerical order"
 );
 assert.doesNotMatch(
   functionSource("queueRepAnnouncements", "startHoldTimer"),
-  /while \(queuedSpokenRepCount < detectedReps\)/,
-  "the guide must not rapidly replay every missed number after another sentence ends"
-);
-assert.match(
-  functionSource("queueRepAnnouncements", "startHoldTimer"),
-  /movementAiConversationActive\(\)[\s\S]*?pendingRepAnnouncements\.length = 0[\s\S]*?queuedSpokenRepCount = Math\.max[\s\S]*?spokenRepCount = Math\.max/,
-  "reps detected during AI speech should count without creating an announcement backlog"
+  /splice\(1, Infinity/,
+  "a later count must never replace an earlier unspoken repetition"
 );
 assert.match(
   source,
@@ -448,13 +443,8 @@ assert.match(
 );
 assert.match(
   functionSource("queueRepAnnouncements", "startHoldTimer"),
-  /detectedMeasurement >= metric\.goal[\s\S]*?pendingRepAnnouncements\.splice\(1, Infinity, finalAnnouncement\)/,
-  "the final completion reminder should skip any stale rep-announcement backlog"
-);
-assert.match(
-  functionSource("queueRepAnnouncements", "startHoldTimer"),
-  /isLastPlannedSet[\s\S]*?pendingRepAnnouncements\.length = 0;[\s\S]*?return;[\s\S]*?const finalAnnouncement/,
-  "the final set should bypass the ordinary announcement queue"
+  /reachesGoal && isLastPlannedSet[\s\S]*?break;[\s\S]*?pendingRepAnnouncements\.push/,
+  "the final number should be reserved for completion speech without deleting earlier queued counts"
 );
 assert.match(
   functionSource("handleCompletedSet", "updateFeedbackPanel"),
@@ -463,8 +453,13 @@ assert.match(
 );
 assert.match(
   functionSource("handleCompletedSet", "updateFeedbackPanel"),
-  /renderCameraRepProgress\(feedback\.exercise, feedback\.repCount[\s\S]*?stopMovementAiGuide\(\)[\s\S]*?beginExerciseCompletionConfirmation\(feedback, completion\)/,
-  "the recognized target should immediately open the completion confirmation"
+  /renderCameraRepProgress\(feedback\.exercise, feedback\.repCount[\s\S]*?pendingExerciseCompletionAnnouncement = \{ feedback, completion \};[\s\S]*?processPendingRepAnnouncements\(\)/,
+  "the recognized target should wait for any earlier rep number before completion speech"
+);
+assert.match(
+  functionSource("announcePendingExerciseCompletion", "queueRepAnnouncements"),
+  /stopMovementAiGuide\(\)[\s\S]*?beginExerciseCompletionConfirmation\(feedback, completion\)/,
+  "completion confirmation should open as soon as the ordered rep queue is empty"
 );
 assert.doesNotMatch(
   functionSource("handleCompletedSet", "updateFeedbackPanel"),
@@ -473,8 +468,13 @@ assert.doesNotMatch(
 );
 assert.match(
   functionSource("beginExerciseCompletionConfirmation", "processPendingRepAnnouncements"),
-  /Would you like me to finish this exercise[\s\S]*?listenForExerciseCompletionConfirmation[\s\S]*?repAnnouncementMessage[\s\S]*?speakMovementGuide\(completionAnnouncement[\s\S]*?interrupt: true[\s\S]*?onEnd: askQuestion/,
-  "completion speech should interrupt coaching, ask permission, and then listen"
+  /Would you like me to finish this exercise[\s\S]*?listenForExerciseCompletionConfirmation[\s\S]*?repAnnouncementMessage[\s\S]*?speakMovementGuide\(completionAnnouncement[\s\S]*?interrupt: true[\s\S]*?onEnd: finishCompletionAnnouncement/,
+  "completion speech should announce the final count, ask permission, and then listen"
+);
+assert.match(
+  functionSource("beginExerciseCompletionConfirmation", "processPendingRepAnnouncements"),
+  /finishCompletionAnnouncement[\s\S]*?spokenRepCount = Math\.max\(spokenRepCount, feedback\.repCount\)[\s\S]*?askQuestion\(\)/,
+  "the spoken-count state should include the final repetition before listening"
 );
 assert.match(
   functionSource("listenForExerciseCompletionConfirmation", "beginExerciseCompletionConfirmation"),

@@ -162,6 +162,49 @@ function escapeHtml(s) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+function activeProgrammes(patient) {
+  if (Array.isArray(patient?.active_prescriptions)) {
+    return patient.active_prescriptions.filter(Boolean);
+  }
+  return patient?.active_prescription ? [patient.active_prescription] : [];
+}
+
+function programmeDose(programme) {
+  const sets = Number(programme?.sets) || 0;
+  const reps = Number(programme?.reps) || 0;
+  const holdSeconds = Number(programme?.hold_seconds) || 0;
+  const dose = holdSeconds > 0
+    ? `${sets}×${holdSeconds}s`
+    : `${sets}×${reps}`;
+  return `${dose} · ${programme?.days_per_week || "—"}×/wk`;
+}
+
+function patientProgrammeCell(patient) {
+  const programmes = activeProgrammes(patient);
+  if (!programmes.length) return `<span class="patient-programme-empty">No programme</span>`;
+  return `
+    <span class="patient-programme-list" aria-label="${programmes.length} assigned programme${programmes.length === 1 ? "" : "s"}">
+      ${programmes.map((programme) => `
+        <span class="patient-programme-item">
+          <strong>${escapeHtml(programme.exercise_name || "Exercise")}</strong>
+          <small>${escapeHtml(programme.days_per_week || "—")}×/wk</small>
+        </span>`).join("")}
+    </span>`;
+}
+
+function patientProgrammeDetail(patient) {
+  const programmes = activeProgrammes(patient);
+  if (!programmes.length) return `<strong class="detail-programme-empty">No active programme</strong>`;
+  return `
+    <div class="detail-programme-list">
+      ${programmes.map((programme) => `
+        <div class="detail-programme-item">
+          <strong>${escapeHtml(programme.exercise_name || "Exercise")}</strong>
+          <small>${escapeHtml(programmeDose(programme))}</small>
+        </div>`).join("")}
+    </div>`;
+}
+
 // ── Patients ────────────────────────────────────────────────
 
 function renderPatientRow(patient) {
@@ -169,9 +212,6 @@ function renderPatientRow(patient) {
   const age        = patient.age ? `${patient.age} · ` : "";
   const goal       = goalLabel(patient.goal);
   const ini        = initials(name);
-  const programme  = patient.active_prescription
-    ? `${patient.active_prescription.exercise_name} · ${patient.active_prescription.days_per_week}×/wk`
-    : "No programme";
   const lastSess   = relativeTime(patient.last_session_at);
   const { icon, cls } = trendIcon(patient.trend);
 
@@ -181,7 +221,7 @@ function renderPatientRow(patient) {
         <i class="avatar">${ini}</i>
         <span><strong>${escapeHtml(name)}</strong><small>${age}${goal}</small></span>
       </span>
-      <span>${escapeHtml(programme)}</span>
+      ${patientProgrammeCell(patient)}
       <span>${lastSess}</span>
       <span class="mini-trend ${cls}">${icon}</span>
       <span>${painBadge(patient.latest_pain_level)}</span>
@@ -288,9 +328,7 @@ async function showPatientDetail(patientId) {
         ${painSafetyReview(p)}
       </div>`).join("") || `<p class="empty-state">No pain check-ins.</p>`;
 
-    const rx = patient.active_prescription
-      ? `${escapeHtml(patient.active_prescription.exercise_name)} — ${patient.active_prescription.sets}×${patient.active_prescription.reps}, ${escapeHtml(patient.active_prescription.days_per_week)}×/wk`
-      : "No active programme";
+    const programmes = activeProgrammes(patient);
 
     panel.innerHTML = `
       <div class="detail-head">
@@ -323,7 +361,7 @@ async function showPatientDetail(patientId) {
         <div><span>Validated coaching-response trend</span><code>${qSpark}</code></div>
         <div><span>Pain trend</span><code>${pSpark}</code></div>
         <div><span>Adherence</span><strong>${patient.adherence_pct ?? "—"}%</strong></div>
-        <div><span>Programme</span><small>${rx}</small></div>
+        <div class="detail-programme-metric"><span>Programme · ${programmes.length} assigned</span>${patientProgrammeDetail(patient)}</div>
       </div>
       <div class="detail-section"><strong>Recent sessions</strong>${sessionRows}</div>
       <div class="detail-section"><strong>Pain diary</strong>${painRows}</div>

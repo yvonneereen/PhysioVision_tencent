@@ -559,6 +559,7 @@ class PatientListSerializer(serializers.ModelSerializer):
     adherence_pct         = serializers.SerializerMethodField()
     latest_pain_level     = serializers.SerializerMethodField()
     active_prescription   = serializers.SerializerMethodField()
+    active_prescriptions  = serializers.SerializerMethodField()
 
     class Meta:
         model  = PatientProfile
@@ -566,6 +567,7 @@ class PatientListSerializer(serializers.ModelSerializer):
             'id', 'full_name', 'email', 'age', 'goal', 'activity_level', 'mobility_status',
             'focus_side', 'care_path', 'last_session_at', 'open_escalations_count',
             'trend', 'adherence_pct', 'latest_pain_level', 'active_prescription',
+            'active_prescriptions',
         ]
 
     def get_full_name(self, obj):
@@ -597,21 +599,43 @@ class PatientListSerializer(serializers.ModelSerializer):
         checkin = obj.pain_checkins.order_by('-checked_at').first()
         return checkin.pain_level if checkin else None
 
-    def get_active_prescription(self, obj):
+    def _active_prescription_rows(self, obj):
         # Keep the roster summary consistent with the patient programme API:
         # current clinician, active flag, and validity dates must all match.
         from api.catalogue.services import active_prescriptions_for
 
-        rx = active_prescriptions_for(obj).select_related('exercise').first()
-        if not rx:
-            return None
-        return {
-            'exercise_id':   rx.exercise_id,
-            'exercise_name': rx.exercise.name,
-            'sets':          rx.sets,
-            'reps':          rx.reps,
-            'days_per_week': rx.days_per_week,
-        }
+        cached = getattr(obj, '_serialized_active_prescriptions', None)
+        if cached is not None:
+            return cached
+        prescriptions = (
+            active_prescriptions_for(obj)
+            .select_related('exercise')
+            .order_by('exercise__sort_order', 'exercise__name', 'created_at')
+        )
+        rows = [
+            {
+                'prescription_id': str(rx.id),
+                'exercise_id': rx.exercise_id,
+                'exercise_name': rx.exercise.name,
+                'sets': rx.sets,
+                'reps': rx.reps,
+                'hold_seconds': rx.hold_seconds,
+                'days_per_week': rx.days_per_week,
+                'notes': rx.notes,
+            }
+            for rx in prescriptions
+        ]
+        obj._serialized_active_prescriptions = rows
+        return rows
+
+    def get_active_prescriptions(self, obj):
+        return self._active_prescription_rows(obj)
+
+    def get_active_prescription(self, obj):
+        # Retain the original field for older frontend deployments while the
+        # clinician dashboard migrates to the complete programme list.
+        rows = self._active_prescription_rows(obj)
+        return rows[0] if rows else None
 
 
 class PatientDischargeSerializer(serializers.Serializer):

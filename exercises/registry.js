@@ -152,11 +152,19 @@ export const EXERCISES = [
       // count to arrive during the following squat.
       returnRecoveryFraction: 0.75,
     },
+    // This is coaching for the named half-squat task, not a clinical limit and
+    // never affects movement quality. A saved personal target takes priority.
+    depthGuidance: {
+      fallbackMinimumKneeAngle: 85,
+      personalizedMarginDegrees: 4,
+    },
     preferExpectedPhase: true,
     // Brief landmark flicker is common while knees bend. Preserve a nearly
     // confirmed phase across a few missed frames, but reset after sustained
     // tracking loss so stale poses cannot earn a repetition.
-    phaseConfirmationMs: 400,
+    // Confirm standing promptly enough that a user who begins during the
+    // spoken instruction does not lose their first repetition.
+    phaseConfirmationMs: 220,
     // A continuous squat should not require a long pause at the bottom. The
     // faster recognition EMA and this short multi-frame confirmation keep the
     // movement responsive while rejecting one-frame pose jitter.

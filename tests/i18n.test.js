@@ -23,9 +23,79 @@ assert.ok(
 );
 assert.deepEqual(
   [...new Set(i18nCacheVersions)],
-  ["40"],
+  ["41"],
   "all browser entry points must use one i18n URL so only one DOM observer is created"
 );
+
+const landingHtml = browserEntrySources[0];
+const landingHeroStart = landingHtml.indexOf('<section class="hero">');
+const publicPracticeEnd = landingHtml.indexOf(
+  '<div id="patientPracticeGate"',
+  landingHeroStart,
+);
+const libraryClassPosition = landingHtml.indexOf(
+  'class="exercise-library-section"',
+  publicPracticeEnd,
+);
+const publicSectionsStart = landingHtml.lastIndexOf(
+  "<section",
+  libraryClassPosition,
+);
+const landingMainEnd = landingHtml.indexOf("</main>", publicSectionsStart);
+const landingFooterStart = landingHtml.indexOf(
+  '<footer class="site-footer">',
+  landingMainEnd,
+);
+const landingFooterEnd = landingHtml.indexOf(
+  '<div class="modal-shell"',
+  landingFooterStart,
+);
+assert.ok(
+  [
+    landingHeroStart,
+    publicPracticeEnd,
+    publicSectionsStart,
+    landingMainEnd,
+    landingFooterStart,
+    landingFooterEnd,
+  ].every((position) => position >= 0),
+  "the public landing-page sections should remain discoverable",
+);
+const publicLandingMarkup = [
+  landingHtml.slice(landingHeroStart, publicPracticeEnd),
+  landingHtml.slice(publicSectionsStart, landingMainEnd),
+  landingHtml.slice(landingFooterStart, landingFooterEnd),
+].join("\n");
+const publicLandingText = [
+  ...publicLandingMarkup.matchAll(/>([^<>]+)</gs),
+].map((match) => match[1].replace(/\s+/g, " ").trim()).filter(
+  (text) => /[A-Za-z]/.test(text) && text.length > 1,
+);
+const publicLandingAttributes = [
+  ...publicLandingMarkup.matchAll(
+    /(?:aria-label|placeholder|title)="([^"]+)"/g,
+  ),
+].map((match) => match[1]);
+const publicLandingSources = new Set([
+  "PhysioVision — Move well, live free",
+  ...publicLandingText,
+  ...publicLandingAttributes,
+]);
+const allowedPublicBrandTerms = {
+  "zh-SG": new Set(["PhysioVision", "GitHub ↗"]),
+  "ms-SG": new Set(["PhysioVision", "GitHub ↗", "Hackathon"]),
+  "ta-SG": new Set(["PhysioVision", "GitHub ↗"]),
+};
+for (const locale of ["zh-SG", "ms-SG", "ta-SG"]) {
+  for (const source of publicLandingSources) {
+    if (allowedPublicBrandTerms[locale].has(source)) continue;
+    assert.notEqual(
+      translateText(source, locale),
+      source,
+      `${locale} is missing public landing-page copy for: ${source}`,
+    );
+  }
+}
 
 const initialLiveGuideMarkup = browserEntrySources[0].slice(
   browserEntrySources[0].indexOf('<div id="patientPracticeWorkspace"'),
@@ -245,7 +315,10 @@ const liveGuideSources = [
   "Local possible-fall check available",
   "The camera check is available. Verify an emergency contact in My profile before automatic alerts can be sent.",
   "Face the camera and step back until one complete hip, knee, and ankle line is visible. Keep the chair beside you and both feet in view.",
-  "Keep both feet flat and keep the chair beside you. Bend both knees and hips slowly as if sitting back toward the chair, only as far as comfortable, then stand tall to complete one repetition. Begin now.",
+  "Camera repetition counting is active now, including while I give this instruction.",
+  "Keep both feet flat and keep the chair beside you. Bend both knees and hips slowly as if sitting back toward the chair, only as far as comfortable, then stand tall to complete one repetition.",
+  "You are going deeper than needed for this half squat. Make the next squat shallower and lower only a little.",
+  "You are going lower than your saved comfortable half-squat range. Make the next squat shallower and stop near the depth used during calibration.",
   "AI questions will be ready after camera setup is complete.",
   "Let me check.",
   "Personalized movement recognition is ready.",

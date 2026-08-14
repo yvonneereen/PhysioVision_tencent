@@ -1,4 +1,4 @@
-import { EXERCISES, EXERCISE_MAP } from "../exercises/registry.js?v=62";
+import { EXERCISES, EXERCISE_MAP } from "../exercises/registry.js?v=63";
 import { applyCalibration } from "../personalization.js";
 import { isClinicalRuleScoreable } from "../movement-quality.js?v=4";
 
@@ -422,8 +422,17 @@ export class FeedbackEngine {
     const targetRange = this.exercise.activeCalibration
       ? phase[config.measurement]
       : config.targetRange ?? phase[config.measurement];
+    const technicalRange = config.targetRange ?? phase[config.measurement];
+    const targetReached = this.exercise.activeCalibration
+      && Array.isArray(targetRange)
+      && Array.isArray(technicalRange)
+      ? (
+        measurement.value <= targetRange[1]
+        && measurement.value >= technicalRange[0]
+      )
+      : _conditionMatches(measurement.value, targetRange);
     return baseline - measurement.value >= (config.minimumChange ?? 0)
-      && _conditionMatches(measurement.value, targetRange);
+      && targetReached;
   }
 
   _captureAdaptiveBaseline(angles) {
@@ -576,6 +585,8 @@ export class FeedbackEngine {
   _evaluateCueDetails(angles) {
     if (!this.exercise.cues) return [];
     const details = [];
+    const depthGuidance = this._halfSquatDepthGuidance(angles);
+    if (depthGuidance) details.push(depthGuidance);
     Object.entries(this.exercise.cues)
       .filter(([condition]) => this._evalCondition(condition, angles))
       .forEach(([condition, configuredCue]) => {
@@ -624,10 +635,85 @@ export class FeedbackEngine {
           message,
           qualityReliable: cue?.qualityReliable !== false,
           scoringEligible,
+          guidanceAllowed: cue?.guidanceAllowed === true,
           ruleCard,
         });
       });
     return details.slice(0, this.exercise.maxCues ?? details.length);
+  }
+
+  _halfSquatDepthGuidance(angles) {
+    const config = this.exercise.depthGuidance;
+    if (this.exercise.id !== "half-squats" || !config) return null;
+    const measurement = this._resolve("knee", angles);
+    if (
+      !measurement
+      || measurement.lowConfidence
+      || !Number.isFinite(measurement.value)
+    ) {
+      return null;
+    }
+
+    const adaptive = this.exercise.adaptivePhaseTracking;
+    const targetPhase = this.exercise.phases.find(
+      (phase) => phase.name === adaptive?.targetPhase,
+    );
+    const personalRange = this.exercise.activeCalibration
+      ? targetPhase?.[adaptive?.measurement]
+      : null;
+    const depthLimit = Array.isArray(personalRange)
+      ? personalRange[0] - (config.personalizedMarginDegrees ?? 0)
+      : config.fallbackMinimumKneeAngle;
+    if (!Number.isFinite(depthLimit) || measurement.value >= depthLimit) {
+      return null;
+    }
+
+    const personalized = Array.isArray(personalRange);
+    const message = personalized
+      ? (
+        "You are going lower than your saved comfortable half-squat range. "
+        + "Make the next squat shallower and stop near the depth used during calibration."
+      )
+      : (
+        "You are going deeper than needed for this half squat. "
+        + "Make the next squat shallower and lower only a little."
+      );
+    return {
+      id: "half-squat:depth-guidance",
+      ruleId: "half-squat:depth-guidance",
+      condition: `knee<${depthLimit}`,
+      message,
+      qualityReliable: true,
+      scoringEligible: false,
+      guidanceAllowed: true,
+      ruleCard: {
+        clinicalClaim:
+          "The measured knee angle passed the task-specific or personally calibrated half-squat depth guidance point.",
+        intendedPopulation:
+          "People using the reviewed Half Squats camera guide within their approved wellness or clinician plan.",
+        measuredSignal: "Visible-side knee flexion angle during Half Squats.",
+        cameraView: this.exercise.camera ?? "front",
+        thresholdSource: personalized
+          ? "patient_calibration"
+          : "task_specific_engineering_seed",
+        feedback: message,
+        unableToAssessConditions: [
+          "Hip, knee, or ankle landmark missing",
+          "Low landmark confidence",
+          "Unsupported camera view",
+        ],
+        contraindicationsContext:
+          "This reminder describes the selected Half Squats task and does not replace clinician-defined range restrictions.",
+        validationStatus: "unvalidated",
+        technicalValidationStatus: "unvalidated",
+        clinicianApproval: {
+          approved: false,
+          approvedBy: "",
+          approvedAt: "",
+          version: "",
+        },
+      },
+    };
   }
 
   _evalCondition(cond, angles) {

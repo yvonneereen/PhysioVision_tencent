@@ -238,6 +238,36 @@ assert.equal(
 
 {
   const engine = new FeedbackEngine("half-squats", "right");
+  let timestamp = 0;
+  engine.update(halfSquatPose(), timestamp);
+  timestamp += 220;
+  engine.update(halfSquatPose(), timestamp);
+
+  for (let repetition = 1; repetition <= 4; repetition += 1) {
+    const kneeAngle = repetition === 2 ? 70 : 110;
+    const bottom = halfSquatBottom({
+      leftKnee: visible(kneeAngle),
+      rightKnee: visible(kneeAngle),
+    });
+    timestamp += 60;
+    engine.update(bottom, timestamp);
+    timestamp += 180;
+    engine.update(bottom, timestamp);
+    timestamp += 60;
+    engine.update(halfSquatPose(), timestamp);
+    timestamp += 140;
+    engine.update(halfSquatPose(), timestamp);
+  }
+
+  assert.equal(
+    engine.repCount,
+    4,
+    "four complete returns to standing, including one deep squat, must count as four repetitions",
+  );
+}
+
+{
+  const engine = new FeedbackEngine("half-squats", "right");
   engine.update(halfSquatPose(), 0);
   engine.update(halfSquatPose(), 400);
   engine.update(halfSquatBottom(), 500);
@@ -446,8 +476,8 @@ assert.equal(
   const torsoLean = engine.update(halfSquatPose({ torsoLean: visible(45) }));
   const multipleProblems = engine.update(
     halfSquatBottom({
-      leftKnee: visible(85),
-      rightKnee: visible(85),
+      leftKnee: visible(70),
+      rightKnee: visible(70),
       torsoLean: visible(45),
     })
   );
@@ -467,15 +497,62 @@ assert.equal(
     [],
     "torso lean must not be judged against one universal angle",
   );
-  assert.deepEqual(
-    multipleProblems.cues,
-    [],
-    "squat depth below 90 degrees must not be treated as universally wrong",
+  assert.ok(
+    multipleProblems.cues.includes(
+      "You are going deeper than needed for this half squat. Make the next squat shallower and lower only a little."
+    ),
+    "a clearly deep movement should produce immediate half-squat coaching",
+  );
+  assert.equal(multipleProblems.cueDetails[0].guidanceAllowed, true);
+  assert.equal(
+    multipleProblems.cueDetails[0].scoringEligible,
+    false,
+    "depth coaching must not lower movement quality",
   );
   assert.equal(kneeForward.cueDetails[0].scoringEligible, false);
   assert.equal(
     kneeForward.cueDetails[0].ruleCard.validationStatus,
     "unvalidated",
+  );
+}
+
+{
+  const engine = new FeedbackEngine("half-squats", "right", {
+    version: 1,
+    exerciseId: "half-squats",
+    affectedSide: "right",
+    phaseRanges: {
+      standing: { knee: [160, 180] },
+      squat: { knee: [118, 142] },
+    },
+  });
+  engine.update(halfSquatPose(), 0);
+  engine.update(halfSquatPose(), 220);
+
+  const deepSquat = halfSquatBottom({
+    leftKnee: visible(80),
+    rightKnee: visible(80),
+  });
+  engine.update(deepSquat, 300);
+  const heldDeepSquat = engine.update(deepSquat, 500);
+  engine.update(halfSquatPose(), 560);
+  const completed = engine.update(halfSquatPose(), 720);
+
+  assert.equal(
+    heldDeepSquat.detectedPhase,
+    "squat",
+    "going deeper than the saved target should still reach the squat phase",
+  );
+  assert.ok(
+    heldDeepSquat.cues.includes(
+      "You are going lower than your saved comfortable half-squat range. Make the next squat shallower and stop near the depth used during calibration."
+    ),
+    "the camera should coach a return to the personalized depth",
+  );
+  assert.equal(
+    completed.repCount,
+    1,
+    "a too-deep squat should be counted and coached instead of silently discarded",
   );
 }
 
