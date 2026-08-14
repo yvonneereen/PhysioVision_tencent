@@ -298,9 +298,9 @@ class PatientConsultationBookingTests(APITestCase):
     def test_ai_facts_are_scoped_to_the_authenticated_patient(self):
         facts = build_consultation_facts(self.patient)
 
-        self.assertEqual(facts['patient_goal'], 'Stronger knees')
-        self.assertEqual(facts['focus_side'], 'right')
-        self.assertEqual(facts['movement_quality_trend'], 'stable')
+        self.assertNotIn('patient_goal', facts)
+        self.assertNotIn('focus_side', facts)
+        self.assertNotIn('movement_quality_trend', facts)
         self.assertEqual(facts['recent_sessions'], [])
         self.assertEqual(facts['recent_pain_checkins'], [])
         self.assertEqual(facts['open_review_flags'], [])

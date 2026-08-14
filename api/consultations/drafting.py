@@ -6,9 +6,6 @@ from collections import Counter
 from django.conf import settings
 from django.utils import timezone
 
-from api.core.analytics import session_quality_trend
-
-
 class ConsultationDraftUnavailable(RuntimeError):
     """Raised when a safe editable draft cannot be produced."""
 
@@ -49,13 +46,6 @@ def build_consultation_facts(patient):
 
     return {
         'generated_at': timezone.now().isoformat(),
-        'patient_goal': (
-            patient.custom_goal
-            if patient.goal == 'other' and patient.custom_goal
-            else patient.get_goal_display()
-        ),
-        'focus_side': patient.focus_side,
-        'movement_quality_trend': session_quality_trend(patient),
         'recent_sessions': [
             {
                 'date': session.started_at.date().isoformat(),
@@ -130,12 +120,18 @@ def generate_consultation_draft(patient, locale='en-SG'):
     prompt = (
         'Draft a consultation request in the patient\'s first-person voice using '
         f'{LOCALE_NAMES[safe_locale]}. Use only the recorded facts in the JSON. '
-        'Write 2 to 4 short sentences and no more than 900 characters. Summarise '
-        'the most useful recent movement, pain, recovery, completion, or recurring '
-        'tracking pattern. If records are sparse, say the patient would like their '
-        'recent PhysioVision records reviewed. Do not diagnose, infer a cause, '
-        'claim urgency, recommend treatment, change an exercise plan, or invent '
-        'symptoms. Do not include a heading, bullets, quotation marks, or commentary. '
+        'Write 2 to 4 short sentences and no more than 900 characters. Start '
+        'directly with the concrete reason a physiotherapist should review the '
+        'request. Prioritise open review flags, pain check-ins requiring review, '
+        'the latest recorded pain level and location, recovery response, and then '
+        'useful dated session evidence. The physiotherapist assigned the exercise '
+        'programme, so do not describe an exercise or a stored wellness profile '
+        'goal as the patient\'s goal. Do not add a broad overall movement-quality '
+        'label such as "stable" as filler. If records are sparse, simply say the '
+        'patient would like their recent PhysioVision records reviewed. Do not '
+        'diagnose, infer a cause, claim urgency, recommend treatment, change an '
+        'exercise plan, or invent symptoms. Do not include a heading, bullets, '
+        'quotation marks, or commentary. '
         'The patient will review and edit the message before sending.\n\n'
         f'Recorded facts:\n{json.dumps(facts, ensure_ascii=False, default=str)}'
     )
@@ -148,8 +144,10 @@ def generate_consultation_draft(patient, locale='en-SG'):
             model=settings.GEMINI_MODEL,
             system_instruction=(
                 'You prepare editable patient-to-physiotherapist drafts. Preserve '
-                'measured facts, use cautious language, and never provide diagnosis '
-                'or treatment advice.'
+                'measured facts, lead with the concrete reason for review, and use '
+                'cautious language. Never present a stored wellness goal as the '
+                'reason for a clinician-assigned programme, and never provide '
+                'diagnosis or treatment advice.'
             ),
             input=prompt,
         )
