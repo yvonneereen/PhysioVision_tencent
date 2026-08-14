@@ -43,7 +43,7 @@ import {
 } from "./api.js?v=36";
 import { analysePatientTrend } from "./patient-dashboard-state.js?v=16";
 import { DRAFT_EXERCISES } from "./exercises/catalog.js?v=3";
-import { getSpeechLocale, translateText } from "./i18n.js?v=41";
+import { getSpeechLocale, translateText } from "./i18n.js?v=42";
 import { preloadPreparedGuidanceSpeech } from "./guide-audio.js?v=1";
 import {
   isMovementRestRequest,

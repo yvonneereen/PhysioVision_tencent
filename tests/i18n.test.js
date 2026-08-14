@@ -3,11 +3,14 @@ import { readFileSync } from "node:fs";
 
 import {
   getSpeechLocale,
+  hasDirectTranslation,
   resolveInitialLocale,
   setLocale,
   SUPPORTED_LANGUAGES,
   translateText,
 } from "../i18n.js";
+import { DRAFT_EXERCISES } from "../exercises/catalog.js";
+import { EXERCISES } from "../exercises/registry.js";
 
 const browserEntrySources = [
   "../index.html",
@@ -23,7 +26,7 @@ assert.ok(
 );
 assert.deepEqual(
   [...new Set(i18nCacheVersions)],
-  ["41"],
+  ["42"],
   "all browser entry points must use one i18n URL so only one DOM observer is created"
 );
 
@@ -87,12 +90,92 @@ const allowedPublicBrandTerms = {
   "ta-SG": new Set(["PhysioVision", "GitHub ↗"]),
 };
 for (const locale of ["zh-SG", "ms-SG", "ta-SG"]) {
+  const missing = [];
   for (const source of publicLandingSources) {
     if (allowedPublicBrandTerms[locale].has(source)) continue;
+    if (!hasDirectTranslation(source, locale)) missing.push(source);
+  }
+  assert.deepEqual(
+    missing,
+    [],
+    `${locale} is missing complete public landing-page translations`,
+  );
+}
+
+const exerciseLibrarySharedSources = [
+  "● Live tracking",
+  "◌ Coming soon",
+  "Prototype camera tracking active",
+  "Pose + hand sequence prototype active",
+  "Hand-shape sequence prototype active",
+  "Hand tracking required",
+  "Camera tracking limited",
+  "Live rules pending",
+  "Coming soon · camera tracking not wired yet",
+  "Typical use",
+  "Read instructions",
+  "Use only when included in a clinician-approved plan.",
+  "Review suitability and support needs before starting.",
+  "No exercises match that search.",
+  "General",
+  "Post Op",
+  "Clinician Guided",
+  "Support Required",
+  "Hand Tracking Required",
+  "Pose Limited",
+  "General mobility",
+  "Hand & wrist",
+  "Foot & ankle",
+  "Knee & thigh",
+  "Hip & pelvis",
+  "Shoulder & arm",
+  "Balance & gait",
+  "Stretch",
+  "Mobility",
+  "Strengthening",
+  "Balance",
+  "Gait",
+];
+const catalogIds = new Set(DRAFT_EXERCISES.map(({ id }) => id));
+const registryOnlyLibrarySources = EXERCISES
+  .filter(({ id, comingSoon }) => !comingSoon && !catalogIds.has(id))
+  .flatMap((exercise) => [
+    exercise.name,
+    exercise.trackingNotes
+      || "Follow your clinician's guidance and the on-screen coaching cues for this movement.",
+  ]);
+const exerciseLibrarySources = new Set([
+  ...exerciseLibrarySharedSources,
+  ...DRAFT_EXERCISES.flatMap((exercise) => [
+    exercise.name,
+    exercise.region,
+    exercise.category,
+    ...exercise.typicalUse,
+    exercise.instruction,
+  ]),
+  ...registryOnlyLibrarySources,
+]);
+for (const locale of ["zh-SG", "ms-SG", "ta-SG"]) {
+  const missing = [...exerciseLibrarySources].filter(
+    (source) => !hasDirectTranslation(source, locale),
+  );
+  assert.deepEqual(
+    missing,
+    [],
+    `${locale} is missing complete exercise-library translations`,
+  );
+  for (const source of [
+    "23 live · 12 coming soon",
+    "23 exercises have live camera tracking, 12 coming soon.",
+    "Live exercises are wired to the camera/feedback engine and score your movement in real time. The 12 “coming soon” exercises are documented here but do not yet have camera tracking. All still require clinician-approved use and real-video validation.",
+    "35 of 35 shown · 23 live · 12 coming soon",
+    "Ankle & balance · Mobility",
+    "ankle stiffness · reduced lower-limb mobility · hip or knee replacement recovery",
+  ]) {
     assert.notEqual(
       translateText(source, locale),
       source,
-      `${locale} is missing public landing-page copy for: ${source}`,
+      `${locale} should translate generated exercise-library copy: ${source}`,
     );
   }
 }
