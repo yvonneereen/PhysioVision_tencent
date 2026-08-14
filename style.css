@@ -5365,6 +5365,52 @@ details.metrics summary {
   display: none;
 }
 
+.patient-care-accepted-notice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  margin-top: 18px;
+  padding: 20px 22px;
+  border: 1px solid #a9d1ba;
+  border-radius: 18px;
+  color: var(--ink);
+  background: #e6f4eb;
+  box-shadow: 0 12px 28px rgba(32, 91, 59, 0.1);
+}
+
+.patient-care-accepted-notice[hidden] {
+  display: none;
+}
+
+.patient-care-accepted-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  color: var(--white);
+  background: var(--green);
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+.patient-care-accepted-notice .eyebrow {
+  margin: 0 0 4px;
+  color: var(--green);
+}
+
+.patient-care-accepted-notice h2 {
+  margin: 0;
+  font-size: clamp(1.25rem, 2vw, 1.625rem);
+}
+
+.patient-care-accepted-notice p:not(.eyebrow) {
+  margin: 5px 0 0;
+  color: #46645a;
+  line-height: 1.5;
+}
+
 .button-outline-light {
   border: 1px solid rgba(255, 255, 255, 0.45);
   color: var(--white);
@@ -6282,6 +6328,16 @@ details.metrics summary {
 
   .patient-dashboard-primary-actions {
     min-width: 0;
+  }
+
+  .patient-care-accepted-notice {
+    grid-template-columns: auto minmax(0, 1fr);
+    padding: 18px;
+  }
+
+  .patient-care-accepted-notice .button {
+    grid-column: 1 / -1;
+    width: 100%;
   }
 
   .patient-trend-alert {

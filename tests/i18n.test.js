@@ -23,7 +23,7 @@ assert.ok(
 );
 assert.deepEqual(
   [...new Set(i18nCacheVersions)],
-  ["39"],
+  ["40"],
   "all browser entry points must use one i18n URL so only one DOM observer is created"
 );
 
@@ -73,7 +73,7 @@ const voiceCacheVersions = voiceConsumerSources.flatMap((source) =>
 );
 assert.deepEqual(
   [...new Set(voiceCacheVersions)],
-  ["46"],
+  ["47"],
   "all voice consumers must share one voice-guidance module instance"
 );
 
@@ -363,7 +363,11 @@ const dashboardSources = [
   "Complete guided sessions and pain check-ins to begin your trend.",
   "Early indicators only. The final clinical trend criteria are still being validated and will remain separate from AI interpretation.",
   "Which type of exercise support are you using?",
-  "I have a physiotherapist-assigned plan",
+  "I want physiotherapist-guided support",
+  "Physiotherapist request accepted",
+  "You are now connected to a physiotherapist",
+  "Your patient home has switched to the physiotherapist-guided version.",
+  "Got it",
   "I am here for general wellness",
   "No self-guided plan has been created. Review your safety-screen answers before using general-wellness exercises.",
   "Start with your AI movement companion",

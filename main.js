@@ -43,7 +43,7 @@ import {
 } from "./api.js?v=35";
 import { analysePatientTrend } from "./patient-dashboard-state.js?v=16";
 import { DRAFT_EXERCISES } from "./exercises/catalog.js?v=3";
-import { translateText } from "./i18n.js?v=39";
+import { translateText } from "./i18n.js?v=40";
 import {
   isMovementRestRequest,
   isMovementResumeRequest,
@@ -56,7 +56,7 @@ import {
   isSafariBrowser,
   readMicrophonePermissionState,
   voiceGuidance,
-} from "./voice-guidance.js?v=46";
+} from "./voice-guidance.js?v=47";
 import {
   PRACTICE_VIEWS,
   acceptedWellnessPlan,

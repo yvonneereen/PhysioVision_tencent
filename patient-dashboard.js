@@ -1,5 +1,4 @@
 import {
-  acceptCareInvitation,
   acceptConsultation,
   cancelConsultation,
   createConsultation,
@@ -25,10 +24,10 @@ import {
   mergeConsultationTranscript,
   shouldShowPhysiotherapistRequest,
   walkingConfidencePlanNeedsRefresh,
-} from "./patient-dashboard-state.js?v=16";
+} from "./patient-dashboard-state.js?v=17";
 import { saveProfile } from "./personalization.js?v=13";
-import { getLocale, translateText } from "./i18n.js?v=39";
-import { voiceGuidance } from "./voice-guidance.js?v=46";
+import { getLocale, translateText } from "./i18n.js?v=40";
+import { voiceGuidance } from "./voice-guidance.js?v=47";
 import { EXERCISE_MAP } from "./exercises/registry.js?v=62";
 import {
   buildPlannedSessionKey,
@@ -59,21 +58,9 @@ const demoNotice = document.getElementById("patientDemoNotice");
 const dashboardSide = document.getElementById("patientDashboardSide");
 const pathwayModal = document.getElementById("patientPathwayModal");
 const pathwayStatus = document.getElementById("patientPathwayStatus");
-const pathwayInviteForm = document.getElementById(
-  "patientPathwayInviteForm",
-);
-const pathwayInviteCode = document.getElementById(
-  "patientPathwayInviteCode",
-);
-const pathwayInviteSubmit = document.getElementById(
-  "patientPathwayInviteSubmit",
-);
-const pathwayInviteStatus = document.getElementById(
-  "patientPathwayInviteStatus",
-);
-const pathwaySelfRefer = document.getElementById(
-  "patientPathwaySelfRefer",
-);
+const careAcceptedNotice = document.getElementById("patientCareAcceptedNotice");
+const careAcceptedMessage = document.getElementById("patientCareAcceptedMessage");
+const careAcceptedDismiss = document.getElementById("patientCareAcceptedDismiss");
 const referPhysio = document.getElementById("patientReferPhysio");
 const referPhysioButton = document.getElementById("patientReferPhysioButton");
 const referPhysioStatus = document.getElementById("patientReferPhysioStatus");
@@ -154,6 +141,7 @@ let firstSessionTitle = "";
 let firstSessionKey = "";
 let firstSessionCompletedExerciseIds = [];
 let pendingPhysiotherapistRefresh = null;
+let pendingPhysiotherapistPollTimer = null;
 let primaryAction = "plan";
 let toastTimer = null;
 let bookingEditVersion = 0;
@@ -287,6 +275,8 @@ function startExercise(
   if (!exerciseId) {
     if (primaryAction === "ai") {
       openAiCompanion();
+    } else if (primaryAction === "request_status") {
+      refreshPendingPhysiotherapistRequest();
     } else if (primaryAction === "reload") {
       loadDashboardData();
     } else {
@@ -578,6 +568,41 @@ function renderClinicianPlan(prescriptions) {
   primaryStart.innerHTML = 'Start today’s exercises <span aria-hidden="true">→</span>';
 }
 
+function renderPendingPhysiotherapistPlan() {
+  firstExerciseId = null;
+  firstSessionExerciseIds = [];
+  firstSessionDay = "";
+  firstSessionTitle = "";
+  firstSessionKey = "";
+  firstSessionCompletedExerciseIds = [];
+  primaryAction = "request_status";
+  dashboard.classList.add("wellness-dashboard");
+  primaryActions.hidden = true;
+  dashboardSide.hidden = true;
+  consultationCard.hidden = true;
+  demoNotice.hidden = true;
+  setPhysiotherapistRequestVisibility(false);
+  if (messagesLauncher) messagesLauncher.hidden = true;
+  closeMessagesPanel();
+
+  planTitle.textContent = translateText("Physiotherapist request pending");
+  planStatus.textContent = translateText("Request pending");
+  planStatus.className = "status-pill status-pill-review";
+  planIntro.textContent = translateText(
+    "Waiting for a physiotherapist to accept your request.",
+  );
+  planList.appendChild(planRow({
+    label: "i",
+    title: "Your request has been sent",
+    detail:
+      "A physiotherapist must review and accept it before this account changes to clinician-guided care.",
+    note:
+      "Approved exercises will appear only after acceptance and assignment by your physiotherapist.",
+  }));
+  planStart.textContent = "Check request status";
+  primaryStart.textContent = "Check request status";
+}
+
 function renderWellnessPlan(profile) {
   firstExerciseId = null;
   firstSessionExerciseIds = [];
@@ -794,7 +819,11 @@ function renderPlan(user, prescriptions) {
   planScheduleHelp.hidden = true;
   if (planChange) planChange.hidden = true;
   const profile = user.profile ?? {};
-  if (isClinicianGuidedProfile(profile)) {
+  if (isPhysiotherapistRequestPending(profile) && (
+    profile.pathway_choice ?? profile.pathwayChoice ?? "unselected"
+  ) === "unselected") {
+    renderPendingPhysiotherapistPlan();
+  } else if (isClinicianGuidedProfile(profile)) {
     renderClinicianPlan(prescriptions);
   } else {
     renderWellnessPlan(profile);
@@ -1127,6 +1156,7 @@ async function activatePatientDashboard(user) {
     hidePathwayChoice();
     updateDashboardIntro(choice);
     await loadDashboardData();
+    schedulePendingPhysiotherapistRefresh();
     return true;
   })().finally(() => {
     if (dashboardActivationUserId === userId) {
@@ -1138,8 +1168,14 @@ async function activatePatientDashboard(user) {
 }
 
 function updateDashboardIntro(choice) {
+  const waitingForPhysiotherapist = choice === "physiotherapist_pending";
   const usesPhysiotherapist = choice === "physiotherapist";
-  intro.textContent = usesPhysiotherapist
+  intro.textContent = waitingForPhysiotherapist
+    ? (
+      "Your physiotherapist request is being reviewed. This home will switch "
+      + "automatically after a physiotherapist accepts you."
+    )
+    : usesPhysiotherapist
     ? (
       "Review your physiotherapist-assigned plan, start approved exercises "
       + "and follow your progress."
@@ -1151,7 +1187,13 @@ function updateDashboardIntro(choice) {
       + "your movement progress over time."
     );
 
-  const features = usesPhysiotherapist
+  const features = waitingForPhysiotherapist
+    ? [
+      "Request sent",
+      "Awaiting physiotherapist acceptance",
+      "Automatic account update",
+    ]
+    : usesPhysiotherapist
     ? [
       "Specialist-assigned programme",
       "Approved movement guidance",
@@ -1193,20 +1235,6 @@ function setPathwayButtonsDisabled(disabled) {
     .forEach((button) => { button.disabled = disabled; });
 }
 
-function showPathwayInviteEntry() {
-  pathwayInviteForm.hidden = false;
-  pathwayStatus.textContent = "";
-  pathwayModal
-    ?.querySelectorAll("[data-pathway-choice]")
-    .forEach((button) => {
-      const selected =
-        button.dataset.pathwayChoice === "physiotherapist";
-      button.classList.toggle("is-selected", selected);
-      button.setAttribute("aria-pressed", String(selected));
-    });
-  window.setTimeout(() => pathwayInviteCode?.focus(), 50);
-}
-
 async function finishPathwaySetup(profile, user = currentUser) {
   currentUser = { ...user, profile };
   const browserProfile = browserProfileFromApi(profile);
@@ -1215,9 +1243,51 @@ async function finishPathwaySetup(profile, user = currentUser) {
     { detail: browserProfile },
   ));
   hidePathwayChoice();
-  updateDashboardIntro(profile.pathway_choice);
+  updateDashboardIntro(effectivePatientPathway(profile));
   pathwayStatus.textContent = "";
   await loadDashboardData();
+  schedulePendingPhysiotherapistRefresh();
+}
+
+function clearPendingPhysiotherapistRefresh() {
+  window.clearTimeout(pendingPhysiotherapistPollTimer);
+  pendingPhysiotherapistPollTimer = null;
+}
+
+function schedulePendingPhysiotherapistRefresh() {
+  clearPendingPhysiotherapistRefresh();
+  if (
+    document.hidden
+    || !isPhysiotherapistRequestPending(currentUser?.profile)
+  ) {
+    return;
+  }
+  pendingPhysiotherapistPollTimer = window.setTimeout(
+    () => { void refreshPendingPhysiotherapistRequest(); },
+    15_000,
+  );
+}
+
+function showCareAcceptance(profile) {
+  const clinicianName =
+    profile?.primary_clinician_name
+    || translateText("Your physiotherapist");
+  if (careAcceptedMessage) {
+    careAcceptedMessage.textContent =
+      `${clinicianName} accepted your request. Your patient home has switched `
+      + "to the physiotherapist-guided version.";
+  }
+  if (careAcceptedNotice) {
+    careAcceptedNotice.hidden = false;
+  }
+  document
+    .querySelector(".modal-shell.is-open [data-close-modal]")
+    ?.click();
+  showToast(
+    `${clinicianName} accepted your request. Your patient home has been updated.`,
+    "Physiotherapist request accepted",
+  );
+  careAcceptedNotice?.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
 async function refreshPendingPhysiotherapistRequest() {
@@ -1233,16 +1303,25 @@ async function refreshPendingPhysiotherapistRequest() {
       if (user?.role !== "patient") return;
 
       if (isClinicianGuidedProfile(user.profile)) {
+        clearPendingPhysiotherapistRefresh();
+        await activatePatientDashboard(user);
+        showCareAcceptance(user.profile);
+        return;
+      }
+
+      if (!isPhysiotherapistRequestPending(user.profile)) {
         await activatePatientDashboard(user);
         return;
       }
 
       currentUser = user;
-      renderPhysiotherapistRequest(user.profile);
+      updateDashboardIntro(effectivePatientPathway(user.profile));
+      renderPlan(currentUser, currentData?.prescriptions ?? []);
     })
     .catch(() => {})
     .finally(() => {
       pendingPhysiotherapistRefresh = null;
+      schedulePendingPhysiotherapistRefresh();
     });
 
   await pendingPhysiotherapistRefresh;
@@ -1348,6 +1427,8 @@ function browserProfileFromApi(profile) {
     pathwayChoice: profile.pathway_choice,
     physiotherapistRequestedAt:
       profile.physiotherapist_requested_at ?? null,
+    primaryClinician: profile.primary_clinician ?? null,
+    primaryClinicianName: profile.primary_clinician_name ?? "",
     goal: GOAL_BROWSER_LABELS[profile.goal] ?? profile.goal,
     customGoal: profile.custom_goal ?? "",
     activity:
@@ -1380,15 +1461,19 @@ function browserProfileFromApi(profile) {
   };
 }
 
-function showToast(message) {
+function showToast(message, title = "Consultation requested") {
   toastMessage.innerHTML = "";
   const heading = document.createElement("strong");
-  heading.textContent = "Consultation requested";
+  heading.textContent = title;
   toastMessage.append(heading, document.createTextNode(message));
   window.clearTimeout(toastTimer);
   toast.classList.add("show");
   toastTimer = window.setTimeout(() => toast.classList.remove("show"), 4500);
 }
+
+careAcceptedDismiss?.addEventListener("click", () => {
+  if (careAcceptedNotice) careAcceptedNotice.hidden = true;
+});
 
 function setBookingVoiceActive(active) {
   bookingVoiceActive = Boolean(active);
@@ -1597,96 +1682,37 @@ pathwayModal
   ?.querySelectorAll("[data-pathway-choice]")
   .forEach((button) => {
     button.addEventListener("click", async () => {
-      if (button.dataset.pathwayChoice === "physiotherapist") {
-        showPathwayInviteEntry();
-        return;
+      const pathway = button.dataset.pathwayChoice;
+      if (pathway === "physiotherapist") {
+        const confirmed = window.confirm(
+          "Request physiotherapist-guided support? Your account will switch "
+          + "only after a physiotherapist accepts your request.",
+        );
+        if (!confirmed) return;
       }
 
-      pathwayInviteForm.hidden = true;
       setPathwayButtonsDisabled(true);
-      pathwayStatus.textContent = "Saving your pathway…";
+      pathwayStatus.textContent = pathway === "physiotherapist"
+        ? "Sending your request…"
+        : "Saving your pathway…";
       try {
-        const profile = await selectPatientPathway(
-          button.dataset.pathwayChoice
-        );
+        const profile = await selectPatientPathway(pathway);
+        if (pathway === "physiotherapist") {
+          pathwayStatus.textContent =
+            "Request received. Waiting for a physiotherapist to accept you.";
+        }
         await finishPathwaySetup(profile);
       } catch (error) {
         pathwayStatus.textContent =
-          error.message || "Your pathway could not be saved. Please try again.";
+          error.message || (
+            pathway === "physiotherapist"
+              ? "Your request could not be sent. Please try again."
+              : "Your pathway could not be saved. Please try again."
+          );
         setPathwayButtonsDisabled(false);
       }
     });
   });
-
-pathwayInviteForm?.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const code = pathwayInviteCode.value.trim().toUpperCase();
-  pathwayInviteCode.value = code;
-
-  if (!/^[A-Z2-9]{8}$/.test(code)) {
-    pathwayInviteStatus.textContent =
-      "Enter the complete 8-character invitation code.";
-    pathwayInviteCode.focus();
-    return;
-  }
-
-  setPathwayButtonsDisabled(true);
-  pathwayInviteCode.disabled = true;
-  pathwayInviteSubmit.disabled = true;
-  pathwayInviteStatus.textContent = "Checking invitation…";
-
-  try {
-    const result = await acceptCareInvitation(code);
-    let refreshedUser;
-    try {
-      refreshedUser = await getMe();
-    } catch (_) {
-      refreshedUser = {
-        ...currentUser,
-        profile: {
-          ...(currentUser?.profile ?? {}),
-          care_path: result.care_path,
-          pathway_choice: "physiotherapist",
-        },
-      };
-    }
-    pathwayInviteStatus.textContent =
-      `Connected to ${result.clinician}. Loading your patient home…`;
-    await finishPathwaySetup(refreshedUser.profile, refreshedUser);
-    pathwayInviteCode.value = "";
-  } catch (error) {
-    pathwayInviteStatus.textContent =
-      error.message || "The invitation could not be accepted.";
-    setPathwayButtonsDisabled(false);
-    pathwayInviteCode.disabled = false;
-    pathwayInviteSubmit.disabled = false;
-    pathwayInviteCode.focus();
-  }
-});
-
-// Self-referral: patient wants a physiotherapist but has no invite code. Select
-// the physiotherapist pathway with no clinician — the backend posts them to the
-// triage queue for the care team to claim.
-pathwaySelfRefer?.addEventListener("click", async () => {
-  setPathwayButtonsDisabled(true);
-  pathwayInviteCode.disabled = true;
-  pathwayInviteSubmit.disabled = true;
-  pathwaySelfRefer.disabled = true;
-  pathwayInviteStatus.textContent = "Adding you to the triage queue…";
-  try {
-    const profile = await selectPatientPathway("physiotherapist");
-    pathwayInviteStatus.textContent =
-      "Request received. A physiotherapist will pick up your case soon.";
-    await finishPathwaySetup(profile);
-  } catch (error) {
-    pathwayInviteStatus.textContent =
-      error.message || "Your request could not be sent. Please try again.";
-    setPathwayButtonsDisabled(false);
-    pathwayInviteCode.disabled = false;
-    pathwayInviteSubmit.disabled = false;
-    pathwaySelfRefer.disabled = false;
-  }
-});
 
 // A wellness patient can ask for physiotherapist support without losing their
 // current plan. The pathway changes only after a clinician accepts the request.
@@ -1723,6 +1749,7 @@ window.addEventListener("physiovision:auth-role", (event) => {
   if (event.detail?.role === "patient") {
     void activatePatientDashboard(user);
   } else {
+    clearPendingPhysiotherapistRefresh();
     currentUser = null;
     dashboard.hidden = true;
     publicMain.hidden = false;
@@ -1757,6 +1784,18 @@ window.addEventListener("physiovision:profile-updated", (event) => {
         browserProfile.pathwayChoice ??
         browserProfile.pathway_choice ??
         currentUser.profile?.pathway_choice,
+      physiotherapist_requested_at:
+        browserProfile.physiotherapistRequestedAt ??
+        browserProfile.physiotherapist_requested_at ??
+        currentUser.profile?.physiotherapist_requested_at,
+      primary_clinician:
+        browserProfile.primaryClinician ??
+        browserProfile.primary_clinician ??
+        currentUser.profile?.primary_clinician,
+      primary_clinician_name:
+        browserProfile.primaryClinicianName ??
+        browserProfile.primary_clinician_name ??
+        currentUser.profile?.primary_clinician_name,
       wellness_plan:
         browserProfile.wellnessPlan ??
         browserProfile.wellness_plan ??
@@ -1768,6 +1807,7 @@ window.addEventListener("physiovision:profile-updated", (event) => {
     },
   };
   renderPlan(currentUser, currentData?.prescriptions ?? []);
+  schedulePendingPhysiotherapistRefresh();
 });
 
 window.addEventListener("physiovision:language-change", () => {
@@ -1783,9 +1823,15 @@ window.addEventListener("physiovision:session-completed", () => {
   if (currentUser?.role === "patient") void loadDashboardData();
 });
 
-window.addEventListener("focus", refreshPendingPhysiotherapistRequest);
+window.addEventListener("focus", () => {
+  void refreshPendingPhysiotherapistRequest();
+});
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) refreshPendingPhysiotherapistRequest();
+  if (document.hidden) {
+    clearPendingPhysiotherapistRefresh();
+    return;
+  }
+  void refreshPendingPhysiotherapistRequest();
 });
 
 window.pvShowPatientDashboard = (user = null) => showDashboard(user);

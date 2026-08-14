@@ -310,7 +310,7 @@ class ClinicianTriageTests(APITestCase):
         self.assertEqual(summary["signals"], [])
         self.assertIsNone(summary["pain"])
         self.assertIsNone(summary["movement_quality"])
-        self.assertIn("selected physiotherapist-guided care", summary["request_reason"])
+        self.assertIn("requested physiotherapist-guided support", summary["request_reason"])
 
     def _queue_safety_signal(self, safety_follow_up, *, pain_level=5):
         now = timezone.now()

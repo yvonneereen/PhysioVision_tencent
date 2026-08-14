@@ -1782,7 +1782,11 @@ class PatientPathwayChoiceViewTests(APITestCase):
         PatientProfile.objects.create(user=user)
         return user
 
-    def test_patient_can_select_physiotherapist_pathway(self):
+    @patch("api.slack_bot.services.post_self_referral_to_triage")
+    def test_patient_can_request_physiotherapist_without_switching_pathway(
+        self,
+        post_triage,
+    ):
         user = self.make_patient()
         self.client.force_authenticate(user)
 
@@ -1796,10 +1800,14 @@ class PatientPathwayChoiceViewTests(APITestCase):
         user.patient_profile.refresh_from_db()
         self.assertEqual(
             user.patient_profile.pathway_choice,
-            PatientPathwayChoice.PHYSIOTHERAPIST,
+            PatientPathwayChoice.UNSELECTED,
         )
-        self.assertEqual(user.patient_profile.care_path, CarePath.CLINICIAN)
-        self.assertIsNotNone(user.patient_profile.pathway_selected_at)
+        self.assertEqual(user.patient_profile.care_path, CarePath.WELLNESS)
+        self.assertIsNone(user.patient_profile.pathway_selected_at)
+        self.assertIsNotNone(
+            user.patient_profile.physiotherapist_requested_at,
+        )
+        post_triage.assert_called_once_with(user.patient_profile)
 
     def test_patient_can_select_wellness_pathway(self):
         user = self.make_patient()

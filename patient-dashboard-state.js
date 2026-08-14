@@ -22,6 +22,12 @@ export function isClinicianGuidedProfile(profile = {}) {
 export function effectivePatientPathway(profile = {}) {
   const pathwayChoice =
     profile.pathway_choice ?? profile.pathwayChoice ?? "unselected";
+  if (
+    pathwayChoice === "unselected"
+    && isPhysiotherapistRequestPending(profile)
+  ) {
+    return "physiotherapist_pending";
+  }
   if (pathwayChoice !== "unselected") return pathwayChoice;
   return isClinicianGuidedProfile(profile)
     ? "physiotherapist"

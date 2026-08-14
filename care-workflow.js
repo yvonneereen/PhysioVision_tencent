@@ -1,6 +1,4 @@
 import {
-  acceptCareInvitation,
-  createCareInvitation,
   createPrescription,
   getClinicianPatients,
   getExercises,
@@ -8,21 +6,11 @@ import {
   getPrescriptions,
   isLoggedIn,
 } from "./api.js?v=35";
-import { saveProfile } from "./personalization.js?v=13";
 
-const patientCareLink = document.getElementById("patientCareLink");
-const careInviteCode = document.getElementById("careInviteCode");
-const acceptCareInviteButton = document.getElementById("acceptCareInvite");
-const careInviteStatus = document.getElementById("careInviteStatus");
 const profileCarePathStatus = document.getElementById("profileCarePathStatus");
 
 const clinicianAccessMessage = document.getElementById("clinicianAccessMessage");
 const clinicianWorkspace = document.getElementById("clinicianWorkspace");
-const createCareInviteButton = document.getElementById("createCareInvite");
-const careInviteResult = document.getElementById("careInviteResult");
-const careInviteResultCode = document.getElementById("careInviteResultCode");
-const careInviteExpiry = document.getElementById("careInviteExpiry");
-const clinicianInviteStatus = document.getElementById("clinicianInviteStatus");
 const prescriptionForm = document.getElementById("prescriptionForm");
 const patientSelect = document.getElementById("prescriptionPatient");
 const exerciseSelect = document.getElementById("prescriptionExercise");
@@ -48,7 +36,6 @@ function isCurrentPrescription(prescription) {
 
 function setRoleInterface(role) {
   currentRole = role;
-  patientCareLink?.classList.toggle("hidden", role !== "patient");
   clinicianWorkspace?.classList.toggle("hidden", role !== "clinician");
   clinicianAccessMessage?.classList.toggle("hidden", role === "clinician");
 }
@@ -100,7 +87,7 @@ function renderPatients(patients) {
     const empty = document.createElement("p");
     empty.className = "clinician-empty-state";
     empty.textContent =
-      "Generate an invitation code and ask the patient to accept it first.";
+      "No patient requests have been accepted from the triage queue yet.";
     patientRows.appendChild(empty);
     return;
   }
@@ -170,52 +157,6 @@ async function loadClinicianWorkspace() {
       error.message || "The clinician workspace could not be loaded.";
   }
 }
-
-acceptCareInviteButton?.addEventListener("click", async () => {
-  const code = careInviteCode.value.trim().toUpperCase();
-  if (!/^[A-Z2-9]{8}$/.test(code)) {
-    careInviteStatus.textContent = "Enter the complete 8-character code.";
-    return;
-  }
-
-  acceptCareInviteButton.disabled = true;
-  careInviteStatus.textContent = "Checking invitation…";
-  try {
-    const result = await acceptCareInvitation(code);
-    saveProfile({
-      carePath: result.care_path,
-    });
-    careInviteStatus.textContent =
-      `Connected to ${result.clinician}. Your programme is awaiting assignment.`;
-    profileCarePathStatus.textContent =
-      "Linked to clinician · awaiting active prescription";
-    careInviteCode.value = "";
-  } catch (error) {
-    careInviteStatus.textContent =
-      error.message || "The invitation could not be accepted.";
-  } finally {
-    acceptCareInviteButton.disabled = false;
-  }
-});
-
-createCareInviteButton?.addEventListener("click", async () => {
-  createCareInviteButton.disabled = true;
-  clinicianInviteStatus.textContent = "Creating a one-time code…";
-  try {
-    const invitation = await createCareInvitation();
-    careInviteResultCode.textContent = invitation.code;
-    careInviteExpiry.textContent =
-      `Expires ${new Date(invitation.expires_at).toLocaleString()}`;
-    careInviteResult.classList.remove("hidden");
-    clinicianInviteStatus.textContent =
-      "The raw code is shown only now. Share it with the intended patient.";
-  } catch (error) {
-    clinicianInviteStatus.textContent =
-      error.message || "The invitation could not be created.";
-  } finally {
-    createCareInviteButton.disabled = false;
-  }
-});
 
 prescriptionForm?.addEventListener("submit", async (event) => {
   event.preventDefault();

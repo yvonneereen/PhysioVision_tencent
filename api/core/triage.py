@@ -33,12 +33,12 @@ def _iso(value):
 
 
 def _request_reason(patient):
-    if patient.physiotherapist_requested_at:
+    if patient.pathway_choice == "wellness":
         return (
             "The patient requested physiotherapist support while continuing "
             "their existing wellness plan."
         )
-    return "The patient selected physiotherapist-guided care during setup."
+    return "The patient requested physiotherapist-guided support during setup."
 
 
 def _pain_summary(checkins):

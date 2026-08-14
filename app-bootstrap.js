@@ -13,7 +13,7 @@ function loadMovementApp() {
   if (!movementPromise) {
     movementPromise = Promise.all([
       import("./exercise-library.js?v=21"),
-      import("./main.js?v=150"),
+      import("./main.js?v=151"),
     ]).catch((error) => {
       movementPromise = null;
       throw error;
@@ -25,8 +25,8 @@ function loadMovementApp() {
 function loadSharedAccountApp() {
   if (!sharedAccountPromise) {
     sharedAccountPromise = Promise.all([
-      import("./agent-chat.js?v=44"),
-      import("./care-workflow.js?v=20"),
+      import("./agent-chat.js?v=45"),
+      import("./care-workflow.js?v=21"),
     ]).catch((error) => {
       sharedAccountPromise = null;
       throw error;
@@ -39,7 +39,7 @@ function loadPatientApp() {
   if (!patientPromise) {
     patientPromise = Promise.all([
       loadSharedAccountApp(),
-      import("./patient-dashboard.js?v=65"),
+      import("./patient-dashboard.js?v=66"),
     ]).catch((error) => {
       patientPromise = null;
       throw error;

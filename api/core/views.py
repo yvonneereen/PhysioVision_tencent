@@ -1099,9 +1099,9 @@ class PatientPathwayChoiceView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
 
-        # A wellness patient may self-refer up to the physiotherapist pathway
-        # (this posts them to triage). Any other change after selection is
-        # blocked and must go through support/a clinician.
+        # Requesting physiotherapist support posts an unlinked patient to
+        # triage. It is a request, not a pathway change: the clinician-guided
+        # pathway becomes active only when a physiotherapist accepts them.
         is_self_referral = (
             profile.pathway_choice == PatientPathwayChoice.WELLNESS
             and choice == PatientPathwayChoice.PHYSIOTHERAPIST
@@ -1121,10 +1121,11 @@ class PatientPathwayChoiceView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
 
-        # Requesting physiotherapist support from the wellness dashboard only
-        # enters the patient into triage. Their current wellness pathway and
-        # plan remain active until a clinician accepts the request.
-        if is_self_referral:
+        is_physiotherapist_request = (
+            choice == PatientPathwayChoice.PHYSIOTHERAPIST
+            and not profile.primary_clinician_id
+        )
+        if is_physiotherapist_request:
             is_new_request = profile.physiotherapist_requested_at is None
             if is_new_request:
                 profile.physiotherapist_requested_at = timezone.now()
@@ -1162,18 +1163,6 @@ class PatientPathwayChoiceView(APIView):
             "wellness_plan_accepted_at",
             "updated_at",
         ])
-
-        # Opting in to physiotherapist help with no clinician yet — surface the
-        # patient in the shared triage queue so any physio can pick them up.
-        if (
-            choice == PatientPathwayChoice.PHYSIOTHERAPIST
-            and not profile.primary_clinician_id
-        ):
-            try:
-                from api.slack_bot.services import post_self_referral_to_triage
-                post_self_referral_to_triage(profile)
-            except Exception:  # Slack must never block the pathway response
-                logger.exception("Failed to post self-referral to Slack triage")
 
         return Response(PatientProfileSerializer(profile).data)
 
@@ -1992,7 +1981,10 @@ class ClinicianTriageQueueView(APIView):
                 "focus_side": patient.focus_side,
                 "request_kind": (
                     "wellness_self_referral"
-                    if patient.physiotherapist_requested_at
+                    if (
+                        patient.pathway_choice
+                        == PatientPathwayChoice.WELLNESS
+                    )
                     else "initial_pathway"
                 ),
                 "requested_at": (
@@ -2171,7 +2163,9 @@ class ClinicianTriageDeclineView(APIView):
                     status=status.HTTP_409_CONFLICT,
                 )
 
-            was_wellness_request = patient.physiotherapist_requested_at is not None
+            was_wellness_request = (
+                patient.pathway_choice == PatientPathwayChoice.WELLNESS
+            )
             patient.physiotherapist_requested_at = None
             update_fields = ["physiotherapist_requested_at", "updated_at"]
 

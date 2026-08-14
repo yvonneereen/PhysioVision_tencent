@@ -15,7 +15,7 @@
     href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap"
     rel="stylesheet"
   />
-  <link rel="stylesheet" href="style.css?v=108" />
+  <link rel="stylesheet" href="style.css?v=109" />
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -221,6 +221,31 @@
           Start today’s exercises <span aria-hidden="true">→</span>
         </button>
       </div>
+    </section>
+
+    <section
+      class="patient-care-accepted-notice"
+      id="patientCareAcceptedNotice"
+      role="status"
+      aria-live="polite"
+      aria-labelledby="patientCareAcceptedTitle"
+      hidden
+    >
+      <span class="patient-care-accepted-icon" aria-hidden="true">✓</span>
+      <div>
+        <p class="eyebrow">Physiotherapist request accepted</p>
+        <h2 id="patientCareAcceptedTitle">You are now connected to a physiotherapist</h2>
+        <p id="patientCareAcceptedMessage">
+          Your patient home has switched to the physiotherapist-guided version.
+        </p>
+      </div>
+      <button
+        class="button button-dark button-small"
+        id="patientCareAcceptedDismiss"
+        type="button"
+      >
+        Got it
+      </button>
     </section>
 
     <section
@@ -431,10 +456,11 @@
         >
           <span class="patient-pathway-number" aria-hidden="true">1</span>
           <span>
-            <strong>I have a physiotherapist-assigned plan</strong>
+            <strong>I want physiotherapist-guided support</strong>
             <small>
-              I have a medical condition, injury or post-operative plan. Show
-              only movements approved for my physiotherapy pathway.
+              Send a request to the physiotherapy team. Your account changes
+              to the clinician-guided version only after a physiotherapist
+              accepts you.
             </small>
           </span>
         </button>
@@ -454,68 +480,12 @@
           </span>
         </button>
       </div>
-      <form
-        class="patient-pathway-invite"
-        id="patientPathwayInviteForm"
-        hidden
-      >
-        <div class="patient-pathway-invite-heading">
-          <span class="patient-pathway-number" aria-hidden="true">↗</span>
-          <div>
-            <strong>Connect to your physiotherapist</strong>
-            <p>
-              Enter the one-time invitation code supplied by the
-              physiotherapist who will manage your programme.
-            </p>
-          </div>
-        </div>
-        <label for="patientPathwayInviteCode">
-          8-character invitation code
-        </label>
-        <div class="patient-pathway-invite-controls">
-          <input
-            id="patientPathwayInviteCode"
-            type="text"
-            maxlength="8"
-            autocomplete="one-time-code"
-            autocapitalize="characters"
-            spellcheck="false"
-            placeholder="ABCD2345"
-            aria-describedby="patientPathwayInviteStatus"
-            required
-          />
-          <button
-            class="button button-dark"
-            id="patientPathwayInviteSubmit"
-            type="submit"
-          >
-            Connect and continue
-          </button>
-        </div>
-        <p
-          class="patient-pathway-invite-status"
-          id="patientPathwayInviteStatus"
-          role="status"
-          aria-live="polite"
-        ></p>
-        <p class="patient-pathway-invite-nocode">
-          Don't have a code?
-          <button
-            type="button"
-            class="text-link"
-            id="patientPathwaySelfRefer"
-          >
-            Request a physiotherapist
-          </button>
-          — we'll add you to the triage queue for the care team to pick up.
-        </p>
-      </form>
       <div class="profile-safety-note">
         <span aria-hidden="true">i</span>
         <p>
           This choice is not a diagnosis. If you have a condition, recent
-          surgery, concerning symptoms or clinician restrictions, choose the
-          physiotherapist-assigned pathway.
+          surgery, concerning symptoms or clinician restrictions, request
+          physiotherapist-guided support.
         </p>
       </div>
       <p
@@ -2431,29 +2401,6 @@
           Save my profile <span aria-hidden="true">→</span>
         </button>
       </form>
-      <section id="patientCareLink" class="care-link-card hidden" aria-labelledby="careLinkTitle">
-        <p class="eyebrow">Clinician programme</p>
-        <h3 id="careLinkTitle">Connect to your physiotherapist</h3>
-        <p>
-          Enter the one-time code supplied by a physiotherapist using
-          PhysioVision. This is a platform link—not a hospital login.
-        </p>
-        <div class="care-link-form">
-          <label for="careInviteCode">8-character invitation code</label>
-          <input
-            id="careInviteCode"
-            type="text"
-            maxlength="8"
-            autocomplete="one-time-code"
-            spellcheck="false"
-            placeholder="ABCD2345"
-          />
-          <button id="acceptCareInvite" class="button button-dark" type="button">
-            Connect
-          </button>
-        </div>
-        <p id="careInviteStatus" class="care-workflow-status" role="status" aria-live="polite"></p>
-      </section>
     </section>
   </div>
 
@@ -2591,20 +2538,6 @@
                 <div><strong>Upcoming consultations</strong><span>Next appointments</span></div>
               </div>
               <div id="overview-consultations"><p class="empty-state">Loading…</p></div>
-            </div>
-          </div>
-          <div class="invite-card">
-            <div class="invite-card-copy">
-              <strong>Invite a patient</strong>
-              <span>Generate a one-time code and read it out to the patient. They enter it under “Connect to your physiotherapist” to link their account.</span>
-            </div>
-            <button class="button button-coral button-small" type="button" id="createCareInvite">
-              Generate invitation code
-            </button>
-            <p class="invite-status" id="clinicianInviteStatus"></p>
-            <div class="invite-result hidden" id="careInviteResult">
-              <span class="invite-code" id="careInviteResultCode">—</span>
-              <span class="invite-expiry" id="careInviteExpiry"></span>
             </div>
           </div>
         </section>
@@ -3002,9 +2935,9 @@
   <script src="runtime-config.js"></script>
   <p id="textSizeStatus" class="sr-only" role="status" aria-live="polite"></p>
   <script type="module" src="text-size.js?v=1"></script>
-  <script type="module" src="i18n.js?v=39"></script>
-  <script type="module" src="app-bootstrap.js?v=1"></script>
+  <script type="module" src="i18n.js?v=40"></script>
+  <script type="module" src="app-bootstrap.js?v=2"></script>
   <script type="module" src="auth.js?v=34"></script>
-  <script type="module" src="ui.js?v=37"></script>
+  <script type="module" src="ui.js?v=38"></script>
 </body>
 </html>

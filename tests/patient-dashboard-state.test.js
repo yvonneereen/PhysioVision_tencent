@@ -28,6 +28,15 @@ assert.equal(
   "an unlinked patient should still be asked to choose a pathway",
 );
 
+assert.equal(
+  effectivePatientPathway({
+    pathway_choice: "unselected",
+    physiotherapist_requested_at: "2026-08-14T01:00:00Z",
+  }),
+  "physiotherapist_pending",
+  "an unaccepted request should show a pending home, not clinician-guided care",
+);
+
 const dates = [
   "2026-07-27T08:00:00Z",
   "2026-07-25T08:00:00Z",
