@@ -227,3 +227,48 @@ class ClinicianAssistantWebsiteTests(APITestCase):
             days_per_week=3,
             equipment="chair",
         )
+
+    @patch("api.slack_bot.services.build_plan_draft_blocks")
+    @patch("api.slack_bot.services.build_plan_draft")
+    def test_natural_exercise_plan_request_opens_structured_editor(
+        self,
+        build_plan,
+        build_blocks,
+    ):
+        draft = SimpleNamespace(
+            id="27dfa6c8-ac05-498b-876d-c7e20d526563",
+            patient=self.patient,
+            plan={
+                "summary": "PFPS exercise draft.",
+                "days": [{"exercise_ids": [self.exercise.id]}],
+                "constraints": {"days_per_week": 3},
+            },
+            preferences={
+                "days_per_week": 3,
+                "dose": {self.exercise.id: {"sets": 2, "reps": 8}},
+            },
+        )
+        build_plan.return_value = (self.patient, draft, None)
+        build_blocks.return_value = [{
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": "*Draft programme — Sarah Lee*"},
+        }]
+
+        response = self.ask(
+            "create an exercise plan for Sarah Lee who has "
+            "Patellofemoral Pain Syndrome"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["command"], "build_plan")
+        self.assertEqual(response.data["data"]["patient_name"], "Sarah Lee")
+        self.assertEqual(
+            response.data["data"]["draft_id"],
+            "27dfa6c8-ac05-498b-876d-c7e20d526563",
+        )
+        build_plan.assert_called_once_with(
+            self.clinician,
+            "sarah lee",
+            days_per_week=3,
+            equipment="chair",
+        )

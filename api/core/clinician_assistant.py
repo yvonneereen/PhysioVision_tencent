@@ -86,6 +86,41 @@ def _general_name(text):
     return match.group(1).strip() if match else None
 
 
+PLAN_COMMAND_PATTERN = re.compile(
+    r"^(?:build|create|draft|generate|prepare|make)"
+    r"(?:\s+(?:a|an))?\s+"
+    r"(?:(?:exercise|rehabilitation|rehab|treatment)\s+)?"
+    r"(?:plan|programme|program)\b",
+    re.IGNORECASE,
+)
+
+
+def _plan_patient_name(text):
+    """Extract the roster name from a natural programme-builder request.
+
+    The assistant previously required the exact phrase ``build a plan for``.
+    Clinicians naturally add words such as ``exercise`` and a diagnosis after
+    the patient's name; those requests must still create a structured draft
+    instead of falling through to an uneditable Gemini response.
+    """
+    match = PLAN_COMMAND_PATTERN.match(text)
+    if not match:
+        return None
+    remainder = re.sub(r"^\s*for\s+", "", text[match.end():], count=1)
+    name = re.split(
+        r"\s+(?:"
+        r"who\b|that\b|diagnosed\b|"
+        r"with\b|having\b|because\b|"
+        r"[234]\s*days?\b|"
+        r"no\s+(?:equipment|kit)\b"
+        r")",
+        remainder,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
+    return name.strip(" ,.;:-") or None
+
+
 def _plan_payload(draft):
     from api.catalogue.models import Exercise
     from api.catalogue.serializers import PROGRAMME_STAGE_CHOICES
@@ -238,13 +273,8 @@ def dispatch_clinician_command(user, message):
             changed=False,
         )
 
-    if re.match(r"^(build|create|draft|generate)(?:\s+a)?\s+plan(?:\s|$)", text):
-        name_match = re.search(
-            r"(?:build|create|draft|generate)(?:\s+a)?\s+plan\s+(?:for\s+)?(.+?)"
-            r"(?=\s+[234]\s*days?\b|\s+(?:with\s+(?:a\s+)?band|no\s+equipment|no\s+kit)\b|$)",
-            text,
-        )
-        name = name_match.group(1).strip() if name_match else None
+    if PLAN_COMMAND_PATTERN.match(text):
+        name = _plan_patient_name(text)
         days_match = re.search(r"([234])\s*days?", text)
         equipment = (
             "chair_band" if "band" in text
