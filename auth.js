@@ -16,6 +16,7 @@ import {
   warmApi,
 } from "./api.js?v=36";
 import { getRoleNavigationState } from "./role-ui.js?v=17";
+import { clearGeneratedGuidanceSpeechCache } from "./guide-audio.js?v=1";
 
 const shell        = document.getElementById("auth-modal");
 const loginForm    = document.getElementById("loginForm");
@@ -656,6 +657,7 @@ async function performLogout() {
   logoutRequestInProgress = true;
 
   const revokeToken = logout();
+  void clearGeneratedGuidanceSpeechCache();
   clearUserCachedData();
   updateAuthButtons(false);
   publishAuthState(null);

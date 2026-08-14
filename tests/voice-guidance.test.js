@@ -597,6 +597,7 @@ await new Promise((resolve) => setTimeout(resolve, 0));
 assert.deepEqual(neuralRequest, {
   text: "Before we begin, how is your pain right now?",
   locale: "en-SG",
+  allowGeneration: true,
 });
 assert.equal(neuralSources[1].started, true);
 assert.ok(
@@ -607,6 +608,44 @@ assert.equal(neuralCompressors[0].ratio.value, 6);
 assert.equal(neuralGains[0].target, neuralCompressors[0]);
 neuralSources[1].listeners.ended();
 assert.equal(neuralEnded, true);
+
+neuralRequest = null;
+assert.equal(
+  neuralGuidance.speak("Rep 4.", {
+    interrupt: true,
+    preferPrepared: true,
+    allowGeneratedSpeech: false,
+    textOnlyOnUnavailable: true,
+  }),
+  true,
+);
+await new Promise((resolve) => setTimeout(resolve, 0));
+assert.deepEqual(neuralRequest, {
+  text: "Rep 4.",
+  locale: "en-SG",
+  allowGeneration: false,
+});
+neuralSources.at(-1).listeners.ended();
+
+let textOnlyCompletionCount = 0;
+const browserSpeechCountBeforeTextOnly = spoken.length;
+const textOnlyGuidance = new VoiceGuidance(neuralWindow);
+textOnlyGuidance.setNeuralSpeechProvider(async () => null);
+await textOnlyGuidance.unlockNeuralAudio();
+textOnlyGuidance.speak("A prepared phrase that is not available.", {
+  interrupt: true,
+  preferPrepared: true,
+  allowGeneratedSpeech: false,
+  textOnlyOnUnavailable: true,
+  onEnd: () => { textOnlyCompletionCount += 1; },
+});
+await new Promise((resolve) => setTimeout(resolve, 0));
+assert.equal(textOnlyCompletionCount, 1);
+assert.equal(
+  spoken.length,
+  browserSpeechCountBeforeTextOnly,
+  "a missing prepared clip should remain text-only instead of changing voice",
+);
 
 const safariSpokenBefore = spoken.length;
 let safariNeuralRequests = 0;
@@ -632,6 +671,32 @@ assert.equal(
   spoken.at(-1).text,
   "This longer guidance sentence must stay on one steady Safari output path.",
   "Safari speech should begin directly with the guidance and no spoken pre-roll"
+);
+
+let safariPreparedRequests = 0;
+const safariPreparedGuidance = new VoiceGuidance({
+  ...neuralWindow,
+  navigator: {
+    userAgent: "Mozilla/5.0 Version/18.3 Safari/605.1.15",
+  },
+});
+safariPreparedGuidance.setNeuralSpeechProvider(async ({ allowGeneration }) => {
+  safariPreparedRequests += 1;
+  assert.equal(allowGeneration, false);
+  return { audio: "AA==" };
+});
+await safariPreparedGuidance.unlockNeuralAudio();
+safariPreparedGuidance.speak("Rep 5.", {
+  interrupt: true,
+  preferPrepared: true,
+  allowGeneratedSpeech: false,
+  textOnlyOnUnavailable: true,
+});
+await new Promise((resolve) => setTimeout(resolve, 0));
+assert.equal(
+  safariPreparedRequests,
+  1,
+  "Safari should play prepared movement audio through the consistent Web Audio path",
 );
 
 const safariWarmupStart = spoken.length;

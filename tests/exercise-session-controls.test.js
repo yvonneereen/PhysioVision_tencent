@@ -690,8 +690,8 @@ const movementGuideSpeechSource = functionSource(
 );
 assert.match(
   movementGuideSpeechSource,
-  /preferImmediate:\s*true[\s\S]*?voiceGroup:\s*MOVEMENT_GUIDE_VOICE_GROUP[\s\S]*?volume:\s*MOVEMENT_GUIDE_VOLUME/,
-  "all live guidance should bypass network latency at one maximum-volume voice"
+  /preferPrepared:\s*true[\s\S]*?allowGeneratedSpeech[\s\S]*?textOnlyOnUnavailable:\s*true[\s\S]*?voiceGroup:\s*MOVEMENT_GUIDE_VOICE_GROUP[\s\S]*?volume:\s*MOVEMENT_GUIDE_VOLUME/,
+  "live guidance should prefer prepared one-voice audio and avoid a browser-voice switch when unavailable"
 );
 assert.match(
   functionSource("speakCameraCoaching", "exerciseSpokenInstruction"),

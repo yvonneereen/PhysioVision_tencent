@@ -43,7 +43,8 @@ import {
 } from "./api.js?v=36";
 import { analysePatientTrend } from "./patient-dashboard-state.js?v=16";
 import { DRAFT_EXERCISES } from "./exercises/catalog.js?v=3";
-import { translateText } from "./i18n.js?v=41";
+import { getSpeechLocale, translateText } from "./i18n.js?v=41";
+import { preloadPreparedGuidanceSpeech } from "./guide-audio.js?v=1";
 import {
   isMovementRestRequest,
   isMovementResumeRequest,
@@ -56,7 +57,7 @@ import {
   isSafariBrowser,
   readMicrophonePermissionState,
   voiceGuidance,
-} from "./voice-guidance.js?v=47";
+} from "./voice-guidance.js?v=49";
 import {
   PRACTICE_VIEWS,
   acceptedWellnessPlan,
@@ -530,6 +531,7 @@ async function requestHandsFreeMicrophone() {
     // its microphone decision; WebKit can otherwise lose the native prompt.
     await voiceGuidance.unlockNeuralAudio();
     voiceSetupStatus.textContent = "Preparing consistent voice guidance…";
+    await preloadPreparedGuidanceSpeech(getSpeechLocale());
     // Safari can keep speaker output in its quiet microphone-capture mode for
     // a moment after the permission stream stops. Let that audio session settle
     // before the first prompt so its full sentence has one consistent volume.
@@ -1374,13 +1376,22 @@ function speakMovementGuide(message, options = {}) {
   const {
     rate = MOVEMENT_GUIDE_RATE,
     pitch = MOVEMENT_GUIDE_PITCH,
+    allowGeneratedSpeech = true,
+    onUnavailable = () => setMovementAiStatus(
+      "error",
+      "Natural guide audio is unavailable. Follow the on-screen guidance; movement tracking remains active.",
+    ),
     ...speechOptions
   } = options;
   return voiceGuidance.speak(message, {
     ...speechOptions,
-    // Live guidance must begin immediately. Using one prepared system voice
-    // avoids both generated-audio latency and Safari output-level changes.
-    preferImmediate: true,
+    // Predictable guidance is loaded from committed audio assets. A missing
+    // clip may be generated once and kept in the device cache; the audio store
+    // enforces a small per-session limit before falling back to on-screen text.
+    preferPrepared: true,
+    allowGeneratedSpeech,
+    textOnlyOnUnavailable: true,
+    onUnavailable,
     voiceGroup: MOVEMENT_GUIDE_VOICE_GROUP,
     volume: MOVEMENT_GUIDE_VOLUME,
     rate,
@@ -1521,13 +1532,14 @@ function resumeMovementAiAfterSpeech(generation) {
 function speakMovementAiMessage(
   message,
   generation,
-  { key } = {}
+  { key, generated = false } = {}
 ) {
   if (!movementAiCanListen(generation)) return false;
   movementAiState = "speaking";
   const spoken = speakMovementGuide(message, {
     key: key || `movement-ai:${generation}:${Date.now()}`,
     interrupt: true,
+    allowGeneratedSpeech: generated,
     onEnd: () => resumeMovementAiAfterSpeech(generation),
   });
   if (!spoken) resumeMovementAiAfterSpeech(generation);
@@ -1785,6 +1797,7 @@ async function answerMovementAiQuestion(question, generation) {
     setMovementAiStatus("speaking", `AI guide: ${reply}`);
     speakMovementAiMessage(reply, generation, {
       key: `movement-ai:answer:${generation}:${cleanedQuestion}`,
+      generated: true,
     });
   } catch (_) {
     await acknowledgement;
@@ -1882,6 +1895,7 @@ function speakCameraCoaching(message, options = {}) {
   delete speechOptions.priority;
   const onUnavailable = speechOptions.onUnavailable;
   delete speechOptions.onUnavailable;
+  let speechUnavailable = false;
   const generation = movementAiGeneration;
   const coachingGeneration = ++movementCoachingGeneration;
   const resumeWakeListener = ["wake", "coaching"].includes(movementAiState)
@@ -1899,8 +1913,16 @@ function speakCameraCoaching(message, options = {}) {
   const originalOnEnd = speechOptions.onEnd;
   const finish = () => {
     if (coachingGeneration !== movementCoachingGeneration) return;
-    originalOnEnd?.();
+    if (!speechUnavailable) originalOnEnd?.();
     if (resumeWakeListener) resumeMovementAiAfterSpeech(generation);
+  };
+  const handleUnavailable = () => {
+    speechUnavailable = true;
+    onUnavailable?.();
+    setMovementAiStatus(
+      "error",
+      "Natural guide audio is unavailable. Follow the on-screen guidance; movement tracking remains active.",
+    );
   };
   const speakAtFullVolume = () => {
     if (
@@ -1916,6 +1938,7 @@ function speakCameraCoaching(message, options = {}) {
     const spoken = speakMovementGuide(message, {
       ...speechOptions,
       onEnd: finish,
+      onUnavailable: handleUnavailable,
     });
     if (!spoken) {
       onUnavailable?.();
@@ -1935,6 +1958,7 @@ function speakCameraCoaching(message, options = {}) {
   return speakMovementGuide(message, {
     ...speechOptions,
     onEnd: finish,
+    onUnavailable: handleUnavailable,
   });
 }
 

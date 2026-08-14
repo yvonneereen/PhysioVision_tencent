@@ -1,0 +1,48 @@
+name: Generate movement guide audio
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_clips:
+        description: "Maximum new clips to generate in this run"
+        required: true
+        default: "20"
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_TTS_MODEL: gemini-3.1-flash-tts-preview
+      GEMINI_TTS_VOICE: Sulafat
+      GUIDE_AUDIO_LIMIT: ${{ inputs.max_clips }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install the Gemini client
+        run: pip install "google-genai>=2.3.0"
+      - name: Generate a quota-safe batch
+        run: >-
+          python scripts/generate-guide-audio.py
+          --limit "$GUIDE_AUDIO_LIMIT"
+          --delay-seconds 21
+      - name: Commit generated clips
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/audio/movement-guide
+          if git diff --cached --quiet; then
+            echo "No new audio files were generated."
+            exit 0
+          fi
+          git commit -m "Generate movement guide audio"
+          git push

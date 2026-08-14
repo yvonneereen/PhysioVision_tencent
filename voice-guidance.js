@@ -2,7 +2,7 @@ import {
   getSpeechLocale,
   translateText,
 } from "./i18n.js?v=41";
-import { generateGuidanceSpeech } from "./api.js?v=36";
+import { getCachedOrGeneratedGuidanceSpeech } from "./guide-audio.js?v=1";
 
 const VOICE_PREFERENCE_KEY = "physiovision.voice.enabled.v1";
 const VOICE_RATE_PREFERENCE_KEY = "physiovision.voice.rate.v1";
@@ -1194,6 +1194,10 @@ export class VoiceGuidance {
     cooldownMs = 0,
     interrupt = false,
     preferImmediate = false,
+    preferPrepared = false,
+    allowGeneratedSpeech = true,
+    textOnlyOnUnavailable = false,
+    onUnavailable = null,
     voiceGroup = "",
     onEnd = null,
     rate = null,
@@ -1214,11 +1218,16 @@ export class VoiceGuidance {
     this.lastSpoken.set(key, now);
 
     const useNeuralSpeech = Boolean(
-      !preferImmediate
-      && !this.singleVoiceEngine
-      && this.neuralSpeechProvider
-      && message.length >= NEURAL_SPEECH_MIN_LENGTH
-      && !/^Rep\s+\d+[.!]?$/i.test(message)
+      this.neuralSpeechProvider
+      && (
+        preferPrepared
+        || (
+          !preferImmediate
+          && !this.singleVoiceEngine
+          && message.length >= NEURAL_SPEECH_MIN_LENGTH
+          && !/^Rep\s+\d+[.!]?$/i.test(message)
+        )
+      )
     );
     if (useNeuralSpeech) {
       const generation = ++this.speechGeneration;
@@ -1230,6 +1239,9 @@ export class VoiceGuidance {
         pitch,
         volume,
         voiceGroup,
+        allowGeneratedSpeech,
+        textOnlyOnUnavailable,
+        onUnavailable,
       });
       return true;
     }
@@ -1395,6 +1407,9 @@ export class VoiceGuidance {
     pitch,
     volume,
     voiceGroup,
+    allowGeneratedSpeech,
+    textOnlyOnUnavailable,
+    onUnavailable,
   }) {
     try {
       if (!this.audioContext) await this.unlockNeuralAudio();
@@ -1408,6 +1423,7 @@ export class VoiceGuidance {
         const response = await this.neuralSpeechProvider({
           text: message,
           locale,
+          allowGeneration: allowGeneratedSpeech,
         });
         base64Audio = response?.audio;
         if (!base64Audio) throw new Error("Generated guidance contained no audio.");
@@ -1458,8 +1474,13 @@ export class VoiceGuidance {
       source.start(0);
     } catch (error) {
       if (generation !== this.speechGeneration || !this.enabled) return;
-      console.warn("Natural guidance audio unavailable; using browser voice.", error);
+      console.warn("Natural guidance audio unavailable.", error);
       this.neuralSpeaking = false;
+      if (textOnlyOnUnavailable) {
+        onUnavailable?.();
+        onEnd?.();
+        return;
+      }
       this.speakBrowser(message, {
         onEnd,
         rate,
@@ -1768,4 +1789,4 @@ export class VoiceGuidance {
 }
 
 export const voiceGuidance = new VoiceGuidance();
-voiceGuidance.setNeuralSpeechProvider(generateGuidanceSpeech);
+voiceGuidance.setNeuralSpeechProvider(getCachedOrGeneratedGuidanceSpeech);
