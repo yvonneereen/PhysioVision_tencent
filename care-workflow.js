@@ -1,4 +1,6 @@
 import {
+  acceptCareInvitation,
+  createCareInvitation,
   createPrescription,
   getClinicianPatients,
   getExercises,
@@ -6,11 +8,22 @@ import {
   getPrescriptions,
   isLoggedIn,
 } from "./api.js?v=36";
+import { translateText } from "./i18n.js?v=44";
+import { saveProfile } from "./personalization.js?v=14";
 
 const profileCarePathStatus = document.getElementById("profileCarePathStatus");
+const patientCareLink = document.getElementById("patientCareLink");
+const careInviteCode = document.getElementById("careInviteCode");
+const acceptCareInviteButton = document.getElementById("acceptCareInvite");
+const careInviteStatus = document.getElementById("careInviteStatus");
 
 const clinicianAccessMessage = document.getElementById("clinicianAccessMessage");
 const clinicianWorkspace = document.getElementById("clinicianWorkspace");
+const createCareInviteButton = document.getElementById("createCareInvite");
+const careInviteResult = document.getElementById("careInviteResult");
+const careInviteResultCode = document.getElementById("careInviteResultCode");
+const careInviteExpiry = document.getElementById("careInviteExpiry");
+const clinicianInviteStatus = document.getElementById("clinicianInviteStatus");
 const prescriptionForm = document.getElementById("prescriptionForm");
 const patientSelect = document.getElementById("prescriptionPatient");
 const exerciseSelect = document.getElementById("prescriptionExercise");
@@ -36,12 +49,17 @@ function isCurrentPrescription(prescription) {
 
 function setRoleInterface(role) {
   currentRole = role;
+  patientCareLink?.classList.toggle("hidden", role !== "patient");
   clinicianWorkspace?.classList.toggle("hidden", role !== "clinician");
   clinicianAccessMessage?.classList.toggle("hidden", role === "clinician");
 }
 
 function renderPatientPath(profile) {
   if (!profileCarePathStatus || !profile) return;
+  patientCareLink?.classList.toggle(
+    "hidden",
+    currentRole !== "patient" || Boolean(profile.primary_clinician)
+  );
   const labels = {
     wellness: "General wellness · screening confirmed",
     clinician: "Clinician-guided rehabilitation · active prescription",
@@ -52,6 +70,69 @@ function renderPatientPath(profile) {
   profileCarePathStatus.textContent =
     labels[profile.care_path] ?? "Pathway not assigned";
 }
+
+acceptCareInviteButton?.addEventListener("click", async () => {
+  const code = String(careInviteCode?.value ?? "").trim().toUpperCase();
+  if (!/^[A-Z2-9]{8}$/.test(code)) {
+    careInviteStatus.textContent = translateText(
+      "Enter the complete 8-character invitation code."
+    );
+    return;
+  }
+
+  acceptCareInviteButton.disabled = true;
+  careInviteStatus.textContent = translateText("Checking invitation…");
+  try {
+    const result = await acceptCareInvitation(code);
+    const user = await getMe();
+    saveProfile({
+      carePath: user.profile?.care_path ?? result.care_path,
+      pathwayChoice: user.profile?.pathway_choice ?? "physiotherapist",
+      primaryClinician: user.profile?.primary_clinician ?? null,
+      primaryClinicianName:
+        user.profile?.primary_clinician_name ?? result.clinician,
+      physiotherapistRequestedAt: null,
+    }, {
+      syncBackend: false,
+      syncScreening: false,
+    });
+    careInviteStatus.textContent = translateText(
+      "Connected successfully. Your physiotherapist can now assign your programme."
+    );
+    careInviteCode.value = "";
+    window.dispatchEvent(new CustomEvent(
+      "physiovision:patient-dashboard-requested",
+      { detail: { user } }
+    ));
+  } catch (error) {
+    careInviteStatus.textContent = error.message
+      || translateText("The invitation could not be accepted.");
+  } finally {
+    acceptCareInviteButton.disabled = false;
+  }
+});
+
+createCareInviteButton?.addEventListener("click", async () => {
+  createCareInviteButton.disabled = true;
+  clinicianInviteStatus.textContent = translateText("Creating a one-time code…");
+  try {
+    const invitation = await createCareInvitation();
+    careInviteResultCode.textContent = invitation.code;
+    const expiry = new Date(invitation.expires_at).toLocaleString(
+      document.documentElement.lang || undefined
+    );
+    careInviteExpiry.textContent = `${translateText("Expires")} ${expiry}`;
+    careInviteResult.classList.remove("hidden");
+    clinicianInviteStatus.textContent = translateText(
+      "The raw code is shown only now. Share it with the intended patient."
+    );
+  } catch (error) {
+    clinicianInviteStatus.textContent = error.message
+      || translateText("The invitation could not be created.");
+  } finally {
+    createCareInviteButton.disabled = false;
+  }
+});
 
 async function detectRole() {
   if (!isLoggedIn()) {

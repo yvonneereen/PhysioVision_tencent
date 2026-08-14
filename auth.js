@@ -16,7 +16,7 @@ import {
   warmApi,
 } from "./api.js?v=36";
 import { getRoleNavigationState } from "./role-ui.js?v=17";
-import { clearGeneratedGuidanceSpeechCache } from "./guide-audio.js?v=2";
+import { clearPersonalGuidanceSpeechCache } from "./guide-audio.js?v=3";
 
 const shell        = document.getElementById("auth-modal");
 const loginForm    = document.getElementById("loginForm");
@@ -657,7 +657,9 @@ async function performLogout() {
   logoutRequestInProgress = true;
 
   const revokeToken = logout();
-  void clearGeneratedGuidanceSpeechCache();
+  // Keep generic exercise instructions available for the next session, but
+  // remove personalised Hey Guide replies when the account signs out.
+  void clearPersonalGuidanceSpeechCache();
   clearUserCachedData();
   updateAuthButtons(false);
   publishAuthState(null);

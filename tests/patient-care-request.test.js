@@ -6,10 +6,15 @@ const markup = read("../index.html");
 const dashboard = read("../patient-dashboard.js");
 const workflow = read("../care-workflow.js");
 
-assert.doesNotMatch(
+assert.match(
   markup,
-  /id="patientCareLink"|id="patientPathwayInviteForm"|id="createCareInvite"/,
-  "the active interface should use requests and acceptance instead of invitation codes",
+  /id="patientCareLink"[\s\S]*?id="careInviteCode"[\s\S]*?id="acceptCareInvite"/,
+  "an unlinked patient should be able to accept a direct clinician invitation",
+);
+assert.match(
+  markup,
+  /Invite a patient[\s\S]*?id="createCareInvite"[\s\S]*?Generate invitation code/,
+  "the clinician overview should retain direct patient invitations",
 );
 assert.match(
   markup,
@@ -31,10 +36,10 @@ assert.match(
   /isClinicianGuidedProfile\(user\.profile\)[\s\S]*?activatePatientDashboard\(user\)[\s\S]*?showCareAcceptance/,
   "acceptance should switch the dashboard before informing the patient",
 );
-assert.doesNotMatch(
+assert.match(
   workflow,
-  /acceptCareInvitation|createCareInvitation/,
-  "the shared account interface should not expose the legacy invitation flow",
+  /acceptCareInvitation[\s\S]*?createCareInvitation/,
+  "the shared account interface should support both direct invitations and triage requests",
 );
 
 console.log("Patient physiotherapist-request lifecycle tests passed");

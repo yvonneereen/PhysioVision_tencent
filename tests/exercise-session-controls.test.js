@@ -231,6 +231,11 @@ assert.match(
   /id="movementAiStatus"[\s\S]*?AI voice questions start with the camera guide/,
   "AI question status should be part of the camera session rather than a separate action"
 );
+assert.match(
+  markup,
+  /id="guideAudioSource"[\s\S]*?id="guideAudioSourceValue"[\s\S]*?Text only/,
+  "the camera guide should disclose whether audio is prepared, cached, live, or text only"
+);
 assert.doesNotMatch(
   markup,
   /id="askMovementGuide"/,
@@ -391,6 +396,21 @@ assert.match(
   "the camera panel should visibly disclose when wake-phrase listening is active"
 );
 assert.match(
+  styles,
+  /\.guide-audio-source\s*\{[\s\S]*?data-source="live_gemini"[\s\S]*?data-source="text_only"/,
+  "audio-source diagnostics should visually distinguish live quota use from text-only guidance"
+);
+assert.match(
+  functionSource("speakMovementGuide", "localizedGuidanceParts"),
+  /allowGeneratedSpeech = false[\s\S]*?cacheScope = "generic"/,
+  "deterministic movement guidance must not make a live Gemini TTS request"
+);
+assert.match(
+  functionSource("speakMovementAiMessage", "captureMovementAiQuestion"),
+  /allowGeneratedSpeech: generated[\s\S]*?cacheScope: generated \? "personal" : "generic"/,
+  "only an unpredictable Hey Guide answer should opt into private live TTS"
+);
+assert.match(
   source,
   /function exerciseStartGuidance[\s\S]*?Keep both feet flat[\s\S]*?keep the chair[\s\S]*?Bend both knees and hips slowly[\s\S]*?only as far as comfortable/,
   "the automatic squat guide should use clear chair, foot, and knee instructions before movement"
@@ -437,8 +457,23 @@ assert.match(
 );
 assert.match(
   functionSource("presentInstructionTrackingPause", "renderFrame"),
+  /const feedback = updateFeedbackPanel[\s\S]*?!feedback\.trackingReady[\s\S]*?movementTrackingGuidance\(feedback\)[\s\S]*?return;/,
+  "a missing heel or joint should remain visible instead of being hidden by the opening-instruction banner"
+);
+assert.match(
+  functionSource("presentInstructionTrackingPause", "renderFrame"),
   /if \(!engine\.startConfirmed[\s\S]*?engine\.update\(measurements, timestampMs\)/,
   "hold exercises should establish only their starting baseline during setup"
+);
+assert.match(
+  functionSource("queueSpokenMovementCue", "currentCoachingRepetitionNumber"),
+  /\["tracking", "visibility"\][\s\S]*?350[\s\S]*?if \(!spoken\) return;[\s\S]*?lastRequestedAt = timestampMs/,
+  "a blocked speech channel must not add another long delay before a visibility reminder"
+);
+assert.match(
+  functionSource("cancelRecoveredTrackingCue", "queueSpokenMovementCue"),
+  /feedback\?\.trackingReady[\s\S]*?250[\s\S]*?cancelSpokenOutput\(\)/,
+  "a recovered heel or joint should cancel an outdated visibility message"
 );
 assert.match(
   functionSource("announceExerciseInstruction", "setIntegratedCameraGuideActive"),
@@ -487,7 +522,7 @@ assert.match(
 );
 assert.match(
   source,
-  /function exerciseCompletionGuidance[\s\S]*?Your next exercise is \$\{nextExercise\.name\}[\s\S]*?Today’s exercise session is done/,
+  /function exerciseCompletionGuidance[\s\S]*?Move on to the next exercise shown on screen[\s\S]*?Your next exercise is \$\{nextExercise\.name\}[\s\S]*?Today’s exercise session is done/,
   "exercise completion should name the next planned movement or end today's session"
 );
 assert.match(
@@ -517,8 +552,8 @@ assert.doesNotMatch(
 );
 assert.match(
   functionSource("beginExerciseCompletionConfirmation", "processPendingRepAnnouncements"),
-  /Would you like me to finish this exercise[\s\S]*?listenForExerciseCompletionConfirmation[\s\S]*?repAnnouncementMessage[\s\S]*?speakMovementGuide\(completionAnnouncement[\s\S]*?interrupt: true[\s\S]*?onEnd: finishCompletionAnnouncement/,
-  "completion speech should announce the final count, ask permission, and then listen"
+  /Would you like me to finish this exercise[\s\S]*?listenForExerciseCompletionConfirmation[\s\S]*?finalCountAnnouncement[\s\S]*?announceExerciseComplete[\s\S]*?completion\.spokenMessage[\s\S]*?onEnd: finishCompletionAnnouncement/,
+  "completion speech should reuse separate final-count and completion clips before listening"
 );
 assert.match(
   functionSource("beginExerciseCompletionConfirmation", "processPendingRepAnnouncements"),

@@ -6,7 +6,11 @@ on:
       max_clips:
         description: "Maximum new clips to generate in this run"
         required: true
-        default: "26"
+        default: "10"
+      exercise_target:
+        description: "Exercise to prioritize; leave blank for the full catalogue order"
+        required: false
+        default: "half-squats"
 
 permissions:
   contents: write
@@ -16,10 +20,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.GEMINI_KEY }}
       GEMINI_TTS_MODEL: gemini-3.1-flash-tts-preview
       GEMINI_TTS_VOICE: Sulafat
       GUIDE_AUDIO_LIMIT: ${{ inputs.max_clips }}
+      GUIDE_AUDIO_EXERCISE: ${{ inputs.exercise_target }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -33,6 +38,7 @@ jobs:
       - name: Generate a quota-safe batch
         run: >-
           python scripts/generate-guide-audio.py
+          --exercise "$GUIDE_AUDIO_EXERCISE"
           --limit "$GUIDE_AUDIO_LIMIT"
           --delay-seconds 21
       - name: Commit generated clips

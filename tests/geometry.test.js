@@ -34,4 +34,21 @@ world[32] = { x: 0.1, y: 2, z: 0 };
   assert.ok(result.leftKneeForwardRatio.weakPoints.includes("leftKnee"));
 }
 
+{
+  const flatWorld = world.map((landmark) => ({ ...landmark }));
+  flatWorld[29] = { x: -0.1, y: 2, z: 0 };
+  flatWorld[31] = { x: -0.3, y: 2, z: 0 };
+  flatWorld[30] = { x: 0.1, y: 2, z: 0 };
+  flatWorld[32] = { x: 0.3, y: 2, z: 0 };
+  const flat = jointAngles(flatWorld, visible);
+  assert.ok(Math.abs(flat.rightFootInclination.value) < 0.001);
+
+  const raisedWorld = flatWorld.map((landmark) => ({ ...landmark }));
+  // MediaPipe Y grows down the image: a raised heel has a smaller Y than toe.
+  raisedWorld[30].y = 1.9;
+  const raised = jointAngles(raisedWorld, visible);
+  assert.ok(raised.rightFootInclination.value > 20);
+  assert.ok(raised.rightFootInclination.value < 35);
+}
+
 console.log("geometry half-squat tests passed");

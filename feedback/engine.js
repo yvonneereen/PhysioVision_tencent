@@ -1,5 +1,5 @@
-import { EXERCISES, EXERCISE_MAP } from "../exercises/registry.js?v=63";
-import { applyCalibration } from "../personalization.js";
+import { EXERCISES, EXERCISE_MAP } from "../exercises/registry.js?v=64";
+import { applyCalibration } from "../personalization.js?v=14";
 import { isClinicalRuleScoreable } from "../movement-quality.js?v=4";
 
 export { EXERCISES };

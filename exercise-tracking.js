@@ -6,7 +6,7 @@ import {
   jointAngles,
   LM,
   VISIBILITY_THRESHOLD,
-} from "./geometry.js";
+} from "./geometry.js?v=2";
 import {
   HAND_LM,
   selectTrackedHand,

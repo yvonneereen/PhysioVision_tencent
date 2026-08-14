@@ -31,6 +31,19 @@ const hidden = {
   weakPoints: ["rightKnee"],
 };
 
+const hiddenRightFoot = {
+  value: Number.NaN,
+  lowConfidence: true,
+  weakPoints: ["rightHeel"],
+};
+
+const calfRaiseFrame = (left, right) => ({
+  leftFootInclination: visible(left),
+  rightFootInclination: right === null
+    ? hiddenRightFoot
+    : visible(right),
+});
+
 // Every selectable exercise must provide at least one specific correction in
 // addition to the shared tracking and phase-order guidance in main.js. This
 // prevents future catalogue additions from silently falling back to generic
@@ -91,6 +104,62 @@ assert.equal(
   1,
   "the unassigned wellness fallback should finish after its 10-repetition target"
 );
+
+{
+  const engine = new FeedbackEngine("calf-raises", "right");
+  const fallback = engine.update(calfRaiseFrame(2, null), 0);
+  assert.equal(fallback.trackingReady, true);
+  assert.equal(fallback.trackingSide, "left");
+  assert.equal(fallback.limitedTracking, true);
+
+  engine.update(calfRaiseFrame(2, null), 120);
+  engine.update(calfRaiseFrame(26, null), 220);
+  engine.update(calfRaiseFrame(26, null), 340);
+  engine.update(calfRaiseFrame(2, null), 440);
+  const completed = engine.update(calfRaiseFrame(2, null), 560);
+  assert.equal(completed.repCount, 1);
+}
+
+{
+  const engine = new FeedbackEngine("calf-raises", "right");
+  const missing = engine.update({
+    leftFootInclination: {
+      value: Number.NaN,
+      lowConfidence: true,
+      weakPoints: ["leftHeel"],
+    },
+    rightFootInclination: hiddenRightFoot,
+  }, 0);
+  assert.equal(missing.trackingReady, false);
+  assert.ok(missing.missingLandmarks.includes("rightHeel"));
+
+  const recovered = engine.update(calfRaiseFrame(2, 2), 100);
+  assert.equal(recovered.trackingReady, true);
+  assert.deepEqual(recovered.missingLandmarks, []);
+}
+
+{
+  const staleCalibration = {
+    version: 1,
+    exerciseId: "calf-raises",
+    affectedSide: "right",
+    phaseRanges: {
+      flat: { footInclination: [0, 5] },
+      raised: { footInclination: [0, 5] },
+    },
+  };
+  const engine = new FeedbackEngine(
+    "calf-raises",
+    "right",
+    staleCalibration,
+  );
+  assert.equal(engine.exercise.activeCalibration, undefined);
+  assert.deepEqual(
+    engine.exercise.phases.find((phase) => phase.name === "raised")
+      .footInclination,
+    [18, 50],
+  );
+}
 
 {
   const engine = new FeedbackEngine("half-squats", "right");

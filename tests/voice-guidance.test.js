@@ -598,6 +598,7 @@ assert.deepEqual(neuralRequest, {
   text: "Before we begin, how is your pain right now?",
   locale: "en-SG",
   allowGeneration: true,
+  cacheScope: "generic",
 });
 assert.equal(neuralSources[1].started, true);
 assert.ok(
@@ -624,6 +625,7 @@ assert.deepEqual(neuralRequest, {
   text: "Rep 4.",
   locale: "en-SG",
   allowGeneration: false,
+  cacheScope: "generic",
 });
 neuralSources.at(-1).listeners.ended();
 

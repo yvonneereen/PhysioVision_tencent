@@ -3,7 +3,7 @@ import {
   isLoggedIn,
   sendAgentMessage,
 } from "./api.js?v=36";
-import { voiceGuidance } from "./voice-guidance.js?v=50";
+import { voiceGuidance } from "./voice-guidance.js?v=51";
 
 const launcher = document.getElementById("agentChatLauncher");
 const panel = document.getElementById("agentChatPanel");
@@ -129,6 +129,7 @@ form?.addEventListener("submit", async (event) => {
     if (result.role === "patient") {
       voiceGuidance.speak(result.reply, {
         key: `agent-reply:${result.reply}`,
+        cacheScope: "personal",
       });
     }
   } catch (error) {

@@ -6,6 +6,11 @@ import {
 
 const PROFILE_KEY = "physiovision.profile.v1";
 const CALIBRATION_KEY = "physiovision.calibrations.v1";
+const CALIBRATION_VERSION_BY_EXERCISE = Object.freeze({
+  // Version 1 used an inverted vertical foot direction and can contain
+  // overlapping flat/raised ranges. Do not silently reuse those measurements.
+  "calf-raises": 2,
+});
 const GOAL_API_VALUES = Object.freeze({
   "Stronger knees": "stronger_knees",
   "Better balance": "better_balance",
@@ -226,12 +231,16 @@ function calibrationStorageKey(exerciseId, affectedSide) {
 export function getCalibration(exerciseId, affectedSide = null) {
   const calibrations = loadCalibrations();
   const exact = calibrations[calibrationStorageKey(exerciseId, affectedSide)];
-  if (exact) return exact;
+  const expectedVersion = CALIBRATION_VERSION_BY_EXERCISE[exerciseId] ?? 1;
+  if (exact) return exact.version === expectedVersion ? exact : null;
   // Read pre-side-specific v1 data only when it belongs to the requested side.
   const legacy = calibrations[exerciseId];
-  return legacy
+  const compatibleLegacy = legacy
     && (!affectedSide || legacy.affectedSide === affectedSide)
     ? legacy
+    : null;
+  return compatibleLegacy?.version === expectedVersion
+    ? compatibleLegacy
     : null;
 }
 
@@ -471,6 +480,22 @@ export function createCalibration(
     }
   }
 
+  for (const [key, minimumChange] of Object.entries(
+    config.minimumTargetChange ?? {}
+  )) {
+    const startValue = start[key]?.median;
+    const targetValue = target[key]?.median;
+    if (
+      Number.isFinite(startValue)
+      && Number.isFinite(targetValue)
+      && Math.abs(targetValue - startValue) < minimumChange
+    ) {
+      throw new Error(
+        "The calibration movement was too close to the starting position. Move through a clearer comfortable range and try again."
+      );
+    }
+  }
+
   const phaseRanges = {
     [config.startPhase]: makePersonalRanges(
       config.personalizedKeys,
@@ -494,7 +519,7 @@ export function createCalibration(
       : null;
 
   return {
-    version: 1,
+    version: config.version ?? 1,
     exerciseId: exercise.id,
     exerciseName: exercise.name,
     affectedSide,
@@ -535,7 +560,7 @@ export function applyCalibration(exercise, calibration) {
 
   if (
     !calibration ||
-    calibration.version !== 1 ||
+    calibration.version !== (exercise.calibration?.version ?? 1) ||
     calibration.exerciseId !== exercise.id
   ) {
     return copy;

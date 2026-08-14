@@ -18,6 +18,26 @@ const catalog = JSON.parse(execFileSync(
   [fileURLToPath(new URL("../scripts/export-guide-audio-catalog.mjs", import.meta.url))],
   { encoding: "utf8" },
 ));
+const halfSquatCatalog = JSON.parse(execFileSync(
+  process.execPath,
+  [
+    fileURLToPath(new URL("../scripts/export-guide-audio-catalog.mjs", import.meta.url)),
+    "--exercise",
+    "half-squats",
+  ],
+  { encoding: "utf8" },
+));
+assert.equal(halfSquatCatalog.target_exercise, "half-squats");
+assert.match(halfSquatCatalog.phrases[0], /Camera repetition counting is active/);
+assert.deepEqual(
+  halfSquatCatalog.phrases.slice(1, 11),
+  Array.from({ length: 10 }, (_, index) => `Rep ${index + 1}.`),
+  "the targeted workflow must prepare all half-squat counts before unrelated audio",
+);
+assert.ok(
+  halfSquatCatalog.all_phrases.some(phrase => phrase.startsWith("Calf Raises.")),
+  "targeting half squats must preserve every other exercise in the master catalogue",
+);
 const firstPreparedBatch = catalog.phrases.slice(0, 26);
 for (const prompt of [
   "Before we begin, how is your pain right now? Please give me a number from zero to ten.",
@@ -61,12 +81,16 @@ class MemoryCache {
   }
 }
 
-const cache = new MemoryCache();
+const namedCaches = new Map();
 const cacheStorage = {
-  open: async () => cache,
-  delete: async () => {
-    cache.responses.clear();
-    return true;
+  open: async (name) => {
+    if (!namedCaches.has(name)) namedCaches.set(name, new MemoryCache());
+    return namedCaches.get(name);
+  },
+  delete: async (name) => {
+    const existed = namedCaches.has(name);
+    namedCaches.delete(name);
+    return existed;
   },
 };
 const browserWindow = {
@@ -150,7 +174,98 @@ const unavailable = await dynamicStore.getSpeech({
 assert.equal(unavailable, null, "fixed guidance must not consume live TTS quota");
 
 assert.equal(await dynamicStore.clearGenerated(), true);
-assert.equal(cache.responses.size, 0);
+assert.equal(namedCaches.size, 0);
+
+let personalRequests = 0;
+const personalStore = new GuidanceAudioStore(browserWindow, {
+  fetchImpl: async () => new Response("not found", { status: 404 }),
+  generateSpeech: async () => {
+    personalRequests += 1;
+    return { audio: "AgI=", mime_type: "audio/wav" };
+  },
+});
+await personalStore.getSpeech({
+  text: "A personalised answer for this session.",
+  locale: "en-SG",
+  allowGeneration: true,
+  cacheScope: "personal",
+});
+const reloadedPersonalStore = new GuidanceAudioStore(browserWindow, {
+  fetchImpl: async () => new Response("not found", { status: 404 }),
+  generateSpeech: async () => {
+    personalRequests += 1;
+    return { audio: "AgI=", mime_type: "audio/wav" };
+  },
+});
+await reloadedPersonalStore.getSpeech({
+  text: "A personalised answer for this session.",
+  locale: "en-SG",
+  allowGeneration: true,
+  cacheScope: "personal",
+});
+assert.equal(
+  personalRequests,
+  2,
+  "personal Hey Guide answers must not persist between page sessions",
+);
+
+let genericRequests = 0;
+const genericStore = new GuidanceAudioStore(browserWindow, {
+  fetchImpl: async () => new Response("not found", { status: 404 }),
+  generateSpeech: async () => {
+    genericRequests += 1;
+    return { audio: "BAQ=", mime_type: "audio/wav" };
+  },
+});
+await genericStore.getSpeech({
+  text: "A previously cached generic instruction.",
+  allowGeneration: true,
+});
+await genericStore.clearPersonal();
+const signedInAgainStore = new GuidanceAudioStore(browserWindow, {
+  fetchImpl: async () => new Response("not found", { status: 404 }),
+  generateSpeech: async () => {
+    genericRequests += 1;
+    return { audio: "BQU=", mime_type: "audio/wav" };
+  },
+});
+const afterSignOut = await signedInAgainStore.getSpeech({
+  text: "A previously cached generic instruction.",
+  allowGeneration: false,
+});
+assert.equal(afterSignOut?.provider, "device_audio_cache");
+assert.equal(genericRequests, 1, "sign-out must preserve generic guidance audio");
+
+let sharedRequests = 0;
+let releaseSharedRequest;
+const sharedStore = new GuidanceAudioStore({
+  ...browserWindow,
+  caches: null,
+}, {
+  fetchImpl: async () => new Response("not found", { status: 404 }),
+  generateSpeech: async () => {
+    sharedRequests += 1;
+    return new Promise((resolve) => {
+      releaseSharedRequest = () => resolve({ audio: "AwM=", mime_type: "audio/wav" });
+    });
+  },
+});
+const sharedOne = sharedStore.getSpeech({
+  text: "This answer was requested twice.",
+  allowGeneration: true,
+  cacheScope: "personal",
+});
+const sharedTwo = sharedStore.getSpeech({
+  text: "This answer was requested twice.",
+  allowGeneration: true,
+  cacheScope: "personal",
+});
+while (!releaseSharedRequest) {
+  await new Promise(resolve => setTimeout(resolve, 0));
+}
+assert.equal(sharedRequests, 1, "simultaneous identical speech must share one request");
+releaseSharedRequest();
+await Promise.all([sharedOne, sharedTwo]);
 
 let limitedGenerationRequests = 0;
 const limitedStore = new GuidanceAudioStore({

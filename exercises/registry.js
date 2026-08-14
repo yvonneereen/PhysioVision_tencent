@@ -304,6 +304,19 @@ export const EXERCISES = [
     category: "strengthening",
     prescription: { sets: 2, reps: 10, holdSeconds: 0, daysPerWeek: "6–7" },
     camera: "front",
+    // This is a bilateral movement. If one heel is briefly obscured, counting
+    // can safely continue from the other complete heel-to-toe line instead of
+    // incorrectly telling the person that no calf raise can be measured.
+    allowOppositeSideFallback: true,
+    // Heel and toe landmarks are small at full-body distance. A task-specific
+    // visibility floor avoids rejecting a clearly drawn heel while the global
+    // threshold remains stricter for larger joints and form checks.
+    trackingVisibilityThreshold: 0.3,
+    trackingLossGraceMs: 350,
+    phaseConfirmationMs: 120,
+    phaseInterruptionGraceMs: 100,
+    calibrationVersion: 2,
+    calibrationMinimumTargetChange: { footInclination: 12 },
     // Foot inclination: degrees the foot rises above horizontal (floor), 0° when flat.
     // ~0–10° standing flat; ~20–45° on tiptoe. Directly captures heel elevation.
     trackedAngles: {
@@ -1175,6 +1188,7 @@ function humanizePhase(phase) {
 }
 
 function calibrationTolerance(key) {
+  if (key === "footInclination") return 5;
   return RATIO_MEASUREMENTS.has(key) ? 0.06 : 8;
 }
 
@@ -1222,6 +1236,7 @@ function attachPersonalCalibration(exercise) {
   const hasPersonalRange = personalizedKeys.length > 0;
 
   exercise.calibration = {
+    version: exercise.calibrationVersion ?? 1,
     mode: hasPersonalRange ? "personal_range" : "tracking_baseline",
     startPhase: startPhase.name,
     targetPhase: targetPhase.name,
@@ -1230,6 +1245,7 @@ function attachPersonalCalibration(exercise) {
     tolerances: Object.fromEntries(
       personalizedKeys.map((key) => [key, calibrationTolerance(key)])
     ),
+    minimumTargetChange: exercise.calibrationMinimumTargetChange ?? {},
     safeRanges: { start: startRanges, target: targetRanges },
     safeConditions: {
       start: conditionMap(startPhase, (condition) => !Array.isArray(condition)),

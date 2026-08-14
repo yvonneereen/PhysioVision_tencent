@@ -197,6 +197,27 @@ const targetCaptures = [
   }
 }
 
+{
+  const calfRaises = EXERCISE_MAP["calf-raises"];
+  assert.equal(calfRaises.calibration.version, 2);
+  assert.throws(
+    () => createCalibration(calfRaises, {
+      affectedSide: "right",
+      startFrames: frames({ footInclination: 2 }),
+      targetCaptures: [frames({ footInclination: 8 })],
+    }),
+    /too close to the starting position/
+  );
+  const calibration = createCalibration(calfRaises, {
+    affectedSide: "right",
+    startFrames: frames({ footInclination: 2 }),
+    targetCaptures: [frames({ footInclination: 24 })],
+  });
+  assert.equal(calibration.version, 2);
+  assert.deepEqual(calibration.phaseRanges.flat.footInclination, [0, 7]);
+  assert.deepEqual(calibration.phaseRanges.raised.footInclination, [19, 29]);
+}
+
 function calibrationValue(condition) {
   if (Array.isArray(condition)) return (condition[0] + condition[1]) / 2;
   if (condition && Object.hasOwn(condition, "equals")) return condition.equals;
@@ -331,6 +352,19 @@ function categoricalFrames(handShape, count = 12) {
   saveCalibration(right);
   assert.equal(getCalibration("ankle_pumps", "left").affectedSide, "left");
   assert.equal(getCalibration("ankle_pumps", "right").affectedSide, "right");
+
+  saveCalibration({
+    version: 1,
+    exerciseId: "calf-raises",
+    affectedSide: "right",
+  });
+  assert.equal(getCalibration("calf-raises", "right"), null);
+  saveCalibration({
+    version: 2,
+    exerciseId: "calf-raises",
+    affectedSide: "right",
+  });
+  assert.equal(getCalibration("calf-raises", "right").version, 2);
   clearCalibration("ankle_pumps", "left");
   assert.equal(getCalibration("ankle_pumps", "left"), null);
   assert.equal(getCalibration("ankle_pumps", "right").affectedSide, "right");

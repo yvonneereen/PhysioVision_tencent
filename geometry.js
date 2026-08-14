@@ -230,13 +230,15 @@ function _kneeForwardRatio(
   return forwardDistance / shinLength;
 }
 
-// Degrees the foot is inclined above horizontal: 0° when flat, ~20–40° on tiptoe.
+// Degrees the foot is inclined above horizontal: 0° when flat, ~20–40° on
+// tiptoe. MediaPipe's pose coordinate system follows the image's vertical
+// direction, so smaller Y values are higher in the frame. A raised heel is
+// therefore above (and has a smaller Y value than) the toe.
 function _footInclination(heel, toe) {
   const dx = toe.x - heel.x;
   const dz = (toe.z ?? 0) - (heel.z ?? 0);
   const horizontalDist = Math.sqrt(dx * dx + dz * dz);
   if (horizontalDist === 0) return NaN;
-  // In world coords Y is up; heel.y > toe.y when heel is raised
-  const elevation = (heel.y ?? 0) - (toe.y ?? 0);
+  const elevation = (toe.y ?? 0) - (heel.y ?? 0);
   return (Math.atan2(Math.max(0, elevation), horizontalDist) * 180) / Math.PI;
 }

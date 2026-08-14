@@ -1,4 +1,4 @@
-import { symmetry, VISIBILITY_THRESHOLD } from "./geometry.js";
+import { symmetry, VISIBILITY_THRESHOLD } from "./geometry.js?v=2";
 import { selectTrackedHand, summarizeHandResult } from "./hand-geometry.js";
 import {
   TRACKING_MODES,
@@ -6,8 +6,8 @@ import {
   measureCombinedExerciseFrame,
   measureHandExerciseFrame,
   measurePoseExerciseFrame,
-} from "./exercise-tracking.js?v=2";
-import { FeedbackEngine, EXERCISES } from "./feedback/engine.js?v=53";
+} from "./exercise-tracking.js?v=3";
+import { FeedbackEngine, EXERCISES } from "./feedback/engine.js?v=54";
 import { POSES } from "./poses.js";
 import {
   calibrationFrameMatchesPhase,
@@ -19,7 +19,7 @@ import {
   loadProfile,
   saveCalibration,
   validateCalibrationCapture,
-} from "./personalization.js?v=13";
+} from "./personalization.js?v=14";
 import {
   buildCalibrationSafetyContext,
   evaluateCalibrationReuse,
@@ -43,8 +43,8 @@ import {
 } from "./api.js?v=36";
 import { analysePatientTrend } from "./patient-dashboard-state.js?v=16";
 import { DRAFT_EXERCISES } from "./exercises/catalog.js?v=3";
-import { getSpeechLocale, translateText } from "./i18n.js?v=42";
-import { preloadPreparedGuidanceSpeech } from "./guide-audio.js?v=2";
+import { getSpeechLocale, translateText } from "./i18n.js?v=44";
+import { preloadPreparedGuidanceSpeech } from "./guide-audio.js?v=3";
 import {
   isMovementRestRequest,
   isMovementResumeRequest,
@@ -57,7 +57,7 @@ import {
   isSafariBrowser,
   readMicrophonePermissionState,
   voiceGuidance,
-} from "./voice-guidance.js?v=50";
+} from "./voice-guidance.js?v=51";
 import {
   PRACTICE_VIEWS,
   acceptedWellnessPlan,
@@ -175,6 +175,10 @@ const liveSessionDayEl = document.getElementById("liveSessionDay");
 const liveSessionProgressEl = document.getElementById("liveSessionProgress");
 const liveSessionFocusEl = document.getElementById("liveSessionFocus");
 const movementAiStatusEl = document.getElementById("movementAiStatus");
+const guideAudioSourceEl = document.getElementById("guideAudioSource");
+const guideAudioSourceValueEl = document.getElementById(
+  "guideAudioSourceValue"
+);
 const fpsEl       = document.getElementById("fps");
 const exSelect    = document.getElementById("exerciseSelect");
 const sideSelect  = document.getElementById("sideSelect");
@@ -1356,6 +1360,8 @@ const sessionTrackingStats = {
   missingMeasurements: {},
 };
 let spokenCoachingCandidate = null;
+let activeSpokenMovementCue = null;
+let recoveredTrackingSince = null;
 let spokenRepCount = 0;
 let queuedSpokenRepCount = 0;
 const pendingRepAnnouncements = [];
@@ -1401,7 +1407,8 @@ function speakMovementGuide(message, options = {}) {
   const {
     rate = MOVEMENT_GUIDE_RATE,
     pitch = MOVEMENT_GUIDE_PITCH,
-    allowGeneratedSpeech = true,
+    allowGeneratedSpeech = false,
+    cacheScope = "generic",
     onUnavailable = () => setMovementAiStatus(
       "error",
       "Natural guide audio is unavailable. Follow the on-screen guidance; movement tracking remains active.",
@@ -1410,11 +1417,12 @@ function speakMovementGuide(message, options = {}) {
   } = options;
   return voiceGuidance.speak(message, {
     ...speechOptions,
-    // Predictable guidance is loaded from committed audio assets. A missing
-    // clip may be generated once and kept in the device cache; the audio store
-    // enforces a small per-session limit before falling back to on-screen text.
+    // Deterministic movement guidance must never spend a live Gemini request.
+    // It is spoken only from committed assets or an existing generic device
+    // cache. Only an unpredictable Hey Guide answer opts into generation.
     preferPrepared: true,
     allowGeneratedSpeech,
+    cacheScope,
     textOnlyOnUnavailable: true,
     onUnavailable,
     voiceGroup: MOVEMENT_GUIDE_VOICE_GROUP,
@@ -1453,6 +1461,22 @@ function setMovementAiStatus(state, message, { hide = false } = {}) {
   movementAiStatusEl.textContent = message;
   movementAiStatusEl.classList.toggle("hidden", hide);
 }
+
+const GUIDE_AUDIO_SOURCE_LABELS = Object.freeze({
+  prepared_guide_audio: "Prepared audio",
+  device_audio_cache: "Device cache",
+  live_gemini: "Live Gemini",
+  gemini_tts: "Live Gemini",
+  text_only: "Text only",
+});
+
+window.addEventListener("physiovision:guide-audio-source", (event) => {
+  if (!guideAudioSourceEl || !guideAudioSourceValueEl) return;
+  const source = String(event.detail?.source ?? "text_only");
+  guideAudioSourceEl.dataset.source = source;
+  guideAudioSourceValueEl.textContent =
+    translateText(GUIDE_AUDIO_SOURCE_LABELS[source] ?? "Text only");
+});
 
 function clearMovementAiRestartTimer() {
   if (movementAiRestartTimer === null) return;
@@ -1565,6 +1589,7 @@ function speakMovementAiMessage(
     key: key || `movement-ai:${generation}:${Date.now()}`,
     interrupt: true,
     allowGeneratedSpeech: generated,
+    cacheScope: generated ? "personal" : "generic",
     onEnd: () => resumeMovementAiAfterSpeech(generation),
   });
   if (!spoken) resumeMovementAiAfterSpeech(generation);
@@ -2032,11 +2057,45 @@ function exerciseTargetGuidance(exercise = engine?.exercise) {
 
 function resetSpokenCoaching({ preserveRepAnnouncements = false } = {}) {
   spokenCoachingCandidate = null;
+  activeSpokenMovementCue = null;
+  recoveredTrackingSince = null;
   spokenRepCount = 0;
   queuedSpokenRepCount = 0;
   if (!preserveRepAnnouncements) {
     pendingRepAnnouncements.length = 0;
     repAnnouncementActive = false;
+  }
+}
+
+function cancelRecoveredTrackingCue(feedback, timestampMs) {
+  const recoverableStates = new Set(["tracking", "visibility"]);
+  if (!feedback?.trackingReady) {
+    recoveredTrackingSince = null;
+    return;
+  }
+
+  if (recoverableStates.has(spokenCoachingCandidate?.state)) {
+    spokenCoachingCandidate = null;
+  }
+  if (!recoverableStates.has(activeSpokenMovementCue?.state)) {
+    recoveredTrackingSince = null;
+    return;
+  }
+  if (recoveredTrackingSince === null) {
+    recoveredTrackingSince = timestampMs;
+    return;
+  }
+  // Confirm recovery for several frames so one flickering heel landmark does
+  // not repeatedly cut speech in and out.
+  if (timestampMs - recoveredTrackingSince < 250) return;
+
+  const generation = activeSpokenMovementCue.movementAiGeneration;
+  activeSpokenMovementCue = null;
+  recoveredTrackingSince = null;
+  movementCoachingGeneration += 1;
+  voiceGuidance.cancelSpokenOutput();
+  if (movementAiState === "coaching") {
+    resumeMovementAiAfterSpeech(generation);
   }
 }
 
@@ -2060,6 +2119,7 @@ function queueSpokenMovementCue(state, cue, timestampMs) {
   if (spokenCoachingCandidate?.identity !== identity) {
     spokenCoachingCandidate = {
       identity,
+      state,
       firstSeenAt: timestampMs,
       lastRequestedAt: -Infinity,
     };
@@ -2069,7 +2129,13 @@ function queueSpokenMovementCue(state, cue, timestampMs) {
   // A person can pass through the bottom of a squat quickly. Confirm the
   // measured depth over several camera frames, then coach it soon enough for
   // the next repetition rather than waiting for a long static hold.
-  const stableForMs = state === "ready" ? 2500 : state === "range" ? 250 : 800;
+  const stableForMs = state === "ready"
+    ? 2500
+    : state === "range"
+      ? 250
+      : ["tracking", "visibility"].includes(state)
+        ? 350
+        : 800;
   const repeatAfterMs = state === "adjust" ? 8000 : 8000;
   if (
     timestampMs - spokenCoachingCandidate.firstSeenAt < stableForMs ||
@@ -2078,11 +2144,27 @@ function queueSpokenMovementCue(state, cue, timestampMs) {
     return;
   }
 
-  spokenCoachingCandidate.lastRequestedAt = timestampMs;
-  speakCameraCoaching(cue, {
+  const movementAiGenerationAtRequest = movementAiGeneration;
+  const spoken = speakCameraCoaching(cue, {
     key: `movement:${engine.exercise.id}:${identity}`,
     cooldownMs: repeatAfterMs,
+    onEnd: () => {
+      if (activeSpokenMovementCue?.identity === identity) {
+        activeSpokenMovementCue = null;
+        recoveredTrackingSince = null;
+      }
+    },
   });
+  // Do not start the repeat cooldown while another sentence is occupying
+  // Safari's single speech channel. That previously delayed a visibility
+  // reminder by another eight seconds after the opening instruction ended.
+  if (!spoken) return;
+  spokenCoachingCandidate.lastRequestedAt = timestampMs;
+  activeSpokenMovementCue = {
+    identity,
+    state,
+    movementAiGeneration: movementAiGenerationAtRequest,
+  };
 }
 
 function currentCoachingRepetitionNumber(feedback = lastFeedbackResult) {
@@ -2167,7 +2249,7 @@ function exerciseCompletionGuidance(exercise = engine?.exercise) {
     return {
       nextExerciseId: nextExercise.id,
       spokenMessage:
-        `You’re done with ${exerciseName}. Your next exercise is ${nextExercise.name}.`,
+        `You’re done with ${exerciseName}. Move on to the next exercise shown on screen.`,
       message: (
         `You’re done with ${exerciseName}. Your next exercise is ${nextExercise.name}. `
         + `Choose Finish exercise and check in, then select ${nextExercise.name}.`
@@ -2347,28 +2429,40 @@ function beginExerciseCompletionConfirmation(feedback, completion) {
       }, 9000);
     }
   };
-  const completionAnnouncement = repAnnouncementMessage({
-    repNumber: feedback.repCount,
-    setNumber: completedSetCount,
-    setGoal: goalMetric(feedback.exercise).goal,
-    isHold: goalMetric(feedback.exercise).isHold,
-    isLastPlannedSet: true,
-    completionMessage: completion.spokenMessage,
-  });
+  const metric = goalMetric(feedback.exercise);
+  const finalCountAnnouncement = metric.isHold
+    ? `${metric.goal} seconds complete.`
+    : `Rep ${feedback.repCount}.`;
   const finishCompletionAnnouncement = () => {
     spokenRepCount = Math.max(spokenRepCount, feedback.repCount);
     askQuestion();
   };
-  const spoken = speakMovementGuide(completionAnnouncement, {
-    key: `completion:${feedback.exercise.id}:${completedSetCount}:${feedback.repCount}`,
+  let completionAnnouncementStarted = false;
+  const announceExerciseComplete = () => {
+    if (completionAnnouncementStarted) return;
+    completionAnnouncementStarted = true;
+    const spoken = speakMovementGuide(completion.spokenMessage, {
+      key: `completion:${feedback.exercise.id}:${completion.nextExerciseId ? "next" : "done"}`,
+      interrupt: true,
+      onEnd: finishCompletionAnnouncement,
+    });
+    if (!spoken) finishCompletionAnnouncement();
+    else {
+      window.setTimeout(() => {
+        if (!voiceGuidance.isSpeaking) finishCompletionAnnouncement();
+      }, 10000);
+    }
+  };
+  const spoken = speakMovementGuide(finalCountAnnouncement, {
+    key: `completion-count:${feedback.exercise.id}:${feedback.repCount}`,
     interrupt: true,
-    onEnd: finishCompletionAnnouncement,
+    onEnd: announceExerciseComplete,
   });
-  if (!spoken) finishCompletionAnnouncement();
+  if (!spoken) announceExerciseComplete();
   else {
     window.setTimeout(() => {
-      if (!voiceGuidance.isSpeaking) finishCompletionAnnouncement();
-    }, 14000);
+      if (!voiceGuidance.isSpeaking) announceExerciseComplete();
+    }, 6000);
   }
 }
 
@@ -3445,7 +3539,14 @@ function presentInstructionTrackingPause(measurements, timestampMs) {
   // exercises retain the baseline-only gate because their setup can resemble
   // the target position. Spoken counts wait until the instruction finishes.
   if (!goalMetric(engine.exercise).isHold && measurements) {
-    updateFeedbackPanel(measurements, timestampMs);
+    const feedback = updateFeedbackPanel(measurements, timestampMs);
+    if (!feedback.trackingReady) {
+      // Keep the specific visibility banner produced by updateFeedbackPanel.
+      // Replacing it with a generic "counting is active" message hid the
+      // missing-heel warning for the entire opening instruction.
+      statusEl.textContent = movementTrackingGuidance(feedback);
+      return;
+    }
     statusEl.textContent =
       "Begin when ready — completed repetitions are already being counted";
     setFeedbackBanner(
@@ -3760,6 +3861,7 @@ function updateFeedbackPanel(angles, timestampMs) {
     return lastFeedbackResult;
   }
   const fb = engine.update(angles, timestampMs);
+  cancelRecoveredTrackingCue(fb, timestampMs);
   if (exerciseSessionActive) {
     sessionTrackingStats.totalFrames += 1;
     if (fb.trackingReady) sessionTrackingStats.assessableFrames += 1;

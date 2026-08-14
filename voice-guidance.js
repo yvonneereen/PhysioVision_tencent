@@ -1,8 +1,8 @@
 import {
   getSpeechLocale,
   translateText,
-} from "./i18n.js?v=42";
-import { getCachedOrGeneratedGuidanceSpeech } from "./guide-audio.js?v=2";
+} from "./i18n.js?v=44";
+import { getCachedOrGeneratedGuidanceSpeech } from "./guide-audio.js?v=3";
 
 const VOICE_PREFERENCE_KEY = "physiovision.voice.enabled.v1";
 const VOICE_RATE_PREFERENCE_KEY = "physiovision.voice.rate.v1";
@@ -824,6 +824,16 @@ export class VoiceGuidance {
         event.detail?.speechLocale || getSpeechLocale()
       );
     });
+    this.window?.addEventListener?.(
+      "physiovision:clear-personal-guidance-audio",
+      () => {
+        for (const [key, cached] of this.neuralAudioCache.entries()) {
+          if (cached?.cacheScope === "personal") {
+            this.neuralAudioCache.delete(key);
+          }
+        }
+      }
+    );
     this.window?.addEventListener?.("pagehide", () => {
       // Explicitly release Safari's speech-recognition capture before a
       // refresh or history navigation so the next page can use the microphone.
@@ -845,6 +855,20 @@ export class VoiceGuidance {
 
   setNeuralSpeechProvider(provider) {
     this.neuralSpeechProvider = typeof provider === "function" ? provider : null;
+  }
+
+  reportGuidanceAudioSource(source, cacheScope = "generic") {
+    const EventConstructor = this.window?.CustomEvent ?? globalThis.CustomEvent;
+    if (!this.window?.dispatchEvent || !EventConstructor) return;
+    this.window.dispatchEvent(new EventConstructor(
+      "physiovision:guide-audio-source",
+      {
+        detail: {
+          source,
+          cacheScope: cacheScope === "personal" ? "personal" : "generic",
+        },
+      }
+    ));
   }
 
   async unlockNeuralAudio() {
@@ -1196,6 +1220,7 @@ export class VoiceGuidance {
     preferImmediate = false,
     preferPrepared = false,
     allowGeneratedSpeech = true,
+    cacheScope = "generic",
     textOnlyOnUnavailable = false,
     onUnavailable = null,
     voiceGroup = "",
@@ -1240,6 +1265,7 @@ export class VoiceGuidance {
         volume,
         voiceGroup,
         allowGeneratedSpeech,
+        cacheScope,
         textOnlyOnUnavailable,
         onUnavailable,
       });
@@ -1408,6 +1434,7 @@ export class VoiceGuidance {
     volume,
     voiceGroup,
     allowGeneratedSpeech,
+    cacheScope,
     textOnlyOnUnavailable,
     onUnavailable,
   }) {
@@ -1417,20 +1444,37 @@ export class VoiceGuidance {
       if (this.audioContext.state === "suspended") await this.audioContext.resume();
 
       const locale = getSpeechLocale();
-      const cacheKey = `${locale}:${message}`;
-      let base64Audio = this.neuralAudioCache.get(cacheKey);
+      const normalizedCacheScope = cacheScope === "personal"
+        ? "personal"
+        : "generic";
+      const cacheKey = `${normalizedCacheScope}:${locale}:${message}`;
+      const cachedSpeech = this.neuralAudioCache.get(cacheKey);
+      let base64Audio = cachedSpeech?.audio;
       if (!base64Audio) {
         const response = await this.neuralSpeechProvider({
           text: message,
           locale,
           allowGeneration: allowGeneratedSpeech,
+          cacheScope: normalizedCacheScope,
         });
         base64Audio = response?.audio;
         if (!base64Audio) throw new Error("Generated guidance contained no audio.");
-        this.neuralAudioCache.set(cacheKey, base64Audio);
+        this.neuralAudioCache.set(cacheKey, {
+          audio: base64Audio,
+          cacheScope: normalizedCacheScope,
+        });
+        this.reportGuidanceAudioSource(
+          response?.provider || "device_audio_cache",
+          normalizedCacheScope,
+        );
         if (this.neuralAudioCache.size > NEURAL_SPEECH_CACHE_LIMIT) {
           this.neuralAudioCache.delete(this.neuralAudioCache.keys().next().value);
         }
+      } else {
+        this.reportGuidanceAudioSource(
+          "device_audio_cache",
+          normalizedCacheScope,
+        );
       }
       const audioBuffer = await this.decodeNeuralAudio(base64Audio);
       if (generation !== this.speechGeneration || !this.enabled) return;
@@ -1477,6 +1521,7 @@ export class VoiceGuidance {
       console.warn("Natural guidance audio unavailable.", error);
       this.neuralSpeaking = false;
       if (textOnlyOnUnavailable) {
+        this.reportGuidanceAudioSource("text_only", cacheScope);
         onUnavailable?.();
         onEnd?.();
         return;

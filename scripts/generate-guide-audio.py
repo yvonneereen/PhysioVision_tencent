@@ -21,20 +21,31 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--locale", default="en-SG")
     parser.add_argument("--limit", type=int, default=20)
+    parser.add_argument(
+        "--exercise",
+        default="",
+        help="Prioritize one exercise without removing any other catalogue entries",
+    )
     parser.add_argument("--delay-seconds", type=float, default=21.0)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT)
     return parser.parse_args()
 
 
-def load_phrases():
+def load_catalog(exercise=""):
+    command = [
+        "node",
+        str(PROJECT_ROOT / "scripts" / "export-guide-audio-catalog.mjs"),
+    ]
+    if exercise:
+        command.extend(["--exercise", exercise])
     result = subprocess.run(
-        ["node", str(PROJECT_ROOT / "scripts" / "export-guide-audio-catalog.mjs")],
+        command,
         cwd=PROJECT_ROOT,
         check=True,
         capture_output=True,
         text=True,
     )
-    return json.loads(result.stdout)["phrases"]
+    return json.loads(result.stdout)
 
 
 def speech_hash(transcript, locale):
@@ -111,7 +122,9 @@ def main():
 
     model = os.environ.get("GEMINI_TTS_MODEL", "gemini-3.1-flash-tts-preview")
     voice = os.environ.get("GEMINI_TTS_VOICE", "Sulafat")
-    phrases = load_phrases()
+    catalog = load_catalog(args.exercise.strip())
+    phrases = catalog["phrases"]
+    all_phrases = catalog.get("all_phrases", phrases)
     output_directory = args.output_root / args.locale
     output_directory.mkdir(parents=True, exist_ok=True)
     missing = [
@@ -146,13 +159,13 @@ def main():
 
     available = write_manifest(
         output_directory,
-        phrases,
+        all_phrases,
         args.locale,
         voice,
     )
     print(
-        f"Manifest contains {available} of {len(phrases)} prepared clips; "
-        f"{len(phrases) - available} remain."
+        f"Manifest contains {available} of {len(all_phrases)} prepared clips; "
+        f"{len(all_phrases) - available} remain."
     )
 
 

@@ -1,7 +1,9 @@
 import { generateGuidanceSpeech } from "./api.js?v=36";
 
 const PREPARED_AUDIO_ROOT = "/assets/audio/movement-guide";
-const GENERATED_AUDIO_CACHE = "physiovision-generated-guide-audio-v1";
+const GENERATED_GENERIC_AUDIO_CACHE =
+  "physiovision-generated-guide-audio-generic-v2";
+const LEGACY_GENERATED_AUDIO_CACHE = "physiovision-generated-guide-audio-v1";
 const GENERATED_AUDIO_CACHE_LIMIT = 96;
 const GENERATED_AUDIO_SESSION_LIMIT = 8;
 const PREPARED_AUDIO_FETCH_TIMEOUT_MS = 2000;
@@ -60,6 +62,7 @@ export class GuidanceAudioStore {
     this.preparedFetchTimeoutMs = preparedFetchTimeoutMs;
     this.generatedSpeechTimeoutMs = generatedSpeechTimeoutMs;
     this.manifestPromises = new Map();
+    this.inFlightGenerations = new Map();
     this.generatedThisSession = 0;
   }
 
@@ -104,7 +107,10 @@ export class GuidanceAudioStore {
         try {
           const response = await this.settleWithin(
             this.fetch(this.manifestUrl(speechLocale), {
-              cache: "force-cache",
+              // Revalidate the small manifest after a deployment so a browser
+              // that previously saw an empty library discovers new clips.
+              // Hashed WAV files themselves remain safely force-cached.
+              cache: "no-cache",
               headers: { Accept: "application/json" },
             }),
             this.preparedFetchTimeoutMs,
@@ -169,7 +175,7 @@ export class GuidanceAudioStore {
 
   async generatedCache() {
     try {
-      return await this.window?.caches?.open(GENERATED_AUDIO_CACHE);
+      return await this.window?.caches?.open(GENERATED_GENERIC_AUDIO_CACHE);
     } catch (_) {
       return null;
     }
@@ -220,10 +226,16 @@ export class GuidanceAudioStore {
     }
   }
 
-  async getSpeech({ text, locale = "en-SG", allowGeneration = true } = {}) {
+  async getSpeech({
+    text,
+    locale = "en-SG",
+    allowGeneration = true,
+    cacheScope = "generic",
+  } = {}) {
     const transcript = normalizeGuidanceTranscript(text);
     if (!transcript) return null;
     const speechLocale = normalizedLocale(locale);
+    const speechScope = cacheScope === "personal" ? "personal" : "generic";
     const hash = await guidanceAudioHash(transcript, speechLocale, this.window);
 
     const prepared = await this.preparedSpeech(transcript, speechLocale, hash);
@@ -232,21 +244,42 @@ export class GuidanceAudioStore {
     const cached = await this.cachedGeneratedSpeech(speechLocale, hash);
     if (cached) return cached;
 
-    if (
-      !allowGeneration
-      || typeof this.generateSpeech !== "function"
-      || this.generatedThisSession >= GENERATED_AUDIO_SESSION_LIMIT
-    ) {
+    if (!allowGeneration || typeof this.generateSpeech !== "function") {
       return null;
     }
-    this.generatedThisSession += 1;
-    const generation = Promise.resolve(this.generateSpeech({
-      text: transcript,
-      locale: speechLocale,
-    })).then(async (generated) => {
-      await this.saveGeneratedSpeech(speechLocale, hash, generated);
-      return generated;
-    });
+
+    // A repeated cue can be requested by more than one camera frame before the
+    // first network response returns. Share that request so one phrase can
+    // never spend two TTS requests merely because rendering is concurrent.
+    const flightKey = `${speechScope}:${speechLocale}:${hash}`;
+    let generation = this.inFlightGenerations.get(flightKey);
+    if (!generation) {
+      if (this.generatedThisSession >= GENERATED_AUDIO_SESSION_LIMIT) {
+        return null;
+      }
+      this.generatedThisSession += 1;
+      generation = Promise.resolve(this.generateSpeech({
+        text: transcript,
+        locale: speechLocale,
+      })).then(async (generated) => {
+        if (!generated?.audio) return null;
+        const speech = {
+          ...generated,
+          provider: "live_gemini",
+          cache_scope: speechScope,
+        };
+        // Personalised Hey Guide answers may contain patient context. They are
+        // deliberately kept out of persistent Cache Storage. Deterministic
+        // generic guidance can still reuse an older device-cached clip.
+        if (speechScope === "generic") {
+          await this.saveGeneratedSpeech(speechLocale, hash, speech);
+        }
+        return speech;
+      }).catch(() => null).finally(() => {
+        this.inFlightGenerations.delete(flightKey);
+      });
+      this.inFlightGenerations.set(flightKey, generation);
+    }
     // Never hold the visible guidance flow indefinitely for a live TTS call.
     // A late response may still finish and populate the device cache, but it
     // will not suddenly begin speaking after the user has already moved on.
@@ -258,10 +291,28 @@ export class GuidanceAudioStore {
 
   async clearGenerated() {
     try {
-      return await this.window?.caches?.delete(GENERATED_AUDIO_CACHE) ?? false;
+      const results = await Promise.all([
+        this.window?.caches?.delete(GENERATED_GENERIC_AUDIO_CACHE),
+        this.window?.caches?.delete(LEGACY_GENERATED_AUDIO_CACHE),
+      ]);
+      return results.some(Boolean);
     } catch (_) {
       return false;
     }
+  }
+
+  async clearPersonal() {
+    // Version 1 mixed generic clips with potentially personalised replies.
+    // Delete that legacy cache once, while preserving the new generic cache.
+    try {
+      await this.window?.caches?.delete(LEGACY_GENERATED_AUDIO_CACHE);
+    } catch (_) {
+      // In-memory clearing below still protects the current browser session.
+    }
+    this.window?.dispatchEvent?.(new CustomEvent(
+      "physiovision:clear-personal-guidance-audio"
+    ));
+    return true;
   }
 }
 
@@ -277,4 +328,8 @@ export function preloadPreparedGuidanceSpeech(locale) {
 
 export function clearGeneratedGuidanceSpeechCache() {
   return guidanceAudioStore.clearGenerated();
+}
+
+export function clearPersonalGuidanceSpeechCache() {
+  return guidanceAudioStore.clearPersonal();
 }

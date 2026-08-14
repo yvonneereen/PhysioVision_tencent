@@ -36,5 +36,10 @@ assert.match(
   /recorded pain, recovery, validation-gated coaching-response and safety signals/,
   "the queue should explain the evidence clinicians are reviewing",
 );
+assert.match(
+  styles,
+  /\.consultation-entry\s*\{[\s\S]*?--consultation-grid-columns:[\s\S]*?\.consultation-entry > \.detail-row\s*\{[\s\S]*?grid-template-columns: var\(--consultation-grid-columns\)[\s\S]*?\.consultation-schedule-form\s*\{[\s\S]*?grid-template-columns: var\(--consultation-grid-columns\)/,
+  "consultation summary text and scheduling controls should share one column grid",
+);
 
 console.log("therapist triage evidence tests passed");

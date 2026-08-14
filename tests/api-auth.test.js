@@ -288,5 +288,15 @@ const authSource = fs.readFileSync(
 assert.match(authSource, /warmApi\(\)/);
 assert.match(authSource, /const preparingCodeTimer = window\.setTimeout/);
 assert.match(authSource, /secure email service is taking longer than usual/i);
+assert.match(
+  authSource,
+  /clearPersonalGuidanceSpeechCache\(\)/,
+  "sign-out should clear personalised replies without deleting generic exercise audio"
+);
+assert.doesNotMatch(
+  authSource,
+  /clearGeneratedGuidanceSpeechCache\(\)/,
+  "sign-out must not erase reusable generic movement instructions"
+);
 
 console.log("API authentication storage tests passed");

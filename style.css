@@ -3083,6 +3083,38 @@ body.fall-safety-open {
   background: #fbe8e4;
 }
 
+.guide-audio-source {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 2px 0;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1.3;
+}
+
+.guide-audio-source strong {
+  padding: 4px 9px;
+  border: 1px solid rgba(38, 79, 81, 0.18);
+  border-radius: 999px;
+  color: var(--ink);
+  background: #edf6f1;
+  font-size: 1rem;
+  white-space: nowrap;
+}
+
+.guide-audio-source[data-source="live_gemini"] strong,
+.guide-audio-source[data-source="gemini_tts"] strong {
+  border-color: rgba(220, 118, 95, 0.35);
+  background: #fff0eb;
+}
+
+.guide-audio-source[data-source="text_only"] strong {
+  color: #6d5750;
+  background: #f4eee9;
+}
+
 .finish-exercise-button {
   width: 100%;
   border: 2px solid var(--ink);
@@ -8002,11 +8034,21 @@ details.metrics summary {
 .overview-card .detail-row { padding-left: 18px; padding-right: 18px; }
 
 .consult-actions { display: flex; gap: 6px; justify-content: flex-end; }
-.consultation-entry { border-bottom: 1px solid var(--line); }
-.consultation-entry > .detail-row { border-bottom: 0; }
+.consultation-entry {
+  --consultation-grid-columns:
+    minmax(150px, 1fr) minmax(120px, .75fr) minmax(130px, .75fr) auto;
+  border-bottom: 1px solid var(--line);
+}
+.consultation-entry > .detail-row {
+  grid-template-columns: var(--consultation-grid-columns);
+  gap: 10px;
+  padding-right: 18px;
+  padding-left: 18px;
+  border-bottom: 0;
+}
 .consultation-schedule-form {
   display: grid;
-  grid-template-columns: minmax(150px, 1fr) minmax(120px, .75fr) minmax(130px, .75fr) auto;
+  grid-template-columns: var(--consultation-grid-columns);
   gap: 10px;
   align-items: end;
   padding: 4px 18px 16px;
@@ -8074,7 +8116,9 @@ details.metrics summary {
   .detail-head, .detail-head-right, .discharge-success { align-items: flex-start; flex-direction: column; }
   .discharge-confirm { grid-template-columns: 1fr; }
   .discharge-confirm-actions { grid-column: 1; justify-content: flex-start; flex-wrap: wrap; }
+  .consultation-entry > .detail-row,
   .consultation-schedule-form { grid-template-columns: 1fr; }
+  .consult-actions { justify-content: flex-start; }
   .consultation-schedule-status { grid-column: 1; }
   .programme-filters { width: 100%; margin-left: 0; }
   .programme-filters label { flex: 1; }

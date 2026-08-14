@@ -15,7 +15,7 @@
     href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap"
     rel="stylesheet"
   />
-  <link rel="stylesheet" href="style.css?v=110" />
+  <link rel="stylesheet" href="style.css?v=112" />
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -1491,6 +1491,16 @@
           >
             AI voice questions start with the camera guide.
           </p>
+          <p
+            id="guideAudioSource"
+            class="guide-audio-source"
+            data-source="text_only"
+            role="status"
+            aria-live="polite"
+          >
+            <span>Guide audio source</span>
+            <strong id="guideAudioSourceValue">Text only</strong>
+          </p>
           <p id="cameraSessionHint" class="camera-session-hint" aria-live="polite">
             Stopping the camera does not mark an exercise as finished.
           </p>
@@ -2401,6 +2411,40 @@
           Save my profile <span aria-hidden="true">→</span>
         </button>
       </form>
+      <section
+        id="patientCareLink"
+        class="care-link-card hidden"
+        aria-labelledby="careLinkTitle"
+      >
+        <p class="eyebrow">Clinician programme</p>
+        <h3 id="careLinkTitle">Connect to your physiotherapist</h3>
+        <p>
+          Enter the one-time invitation code supplied by the physiotherapist
+          who will manage your programme.
+        </p>
+        <div class="care-link-form">
+          <label for="careInviteCode">8-character invitation code</label>
+          <input
+            id="careInviteCode"
+            type="text"
+            maxlength="8"
+            autocomplete="one-time-code"
+            autocapitalize="characters"
+            spellcheck="false"
+            placeholder="ABCD2345"
+            aria-describedby="careInviteStatus"
+          />
+          <button id="acceptCareInvite" class="button button-dark" type="button">
+            Connect and continue
+          </button>
+        </div>
+        <p
+          id="careInviteStatus"
+          class="care-workflow-status"
+          role="status"
+          aria-live="polite"
+        ></p>
+      </section>
     </section>
   </div>
 
@@ -2538,6 +2582,32 @@
                 <div><strong>Upcoming consultations</strong><span>Next appointments</span></div>
               </div>
               <div id="overview-consultations"><p class="empty-state">Loading…</p></div>
+            </div>
+          </div>
+          <div class="invite-card">
+            <div class="invite-card-copy">
+              <strong>Invite a patient</strong>
+              <span>
+                Generate a one-time code for a patient you already know. They
+                enter it under My profile to link their account directly to you.
+              </span>
+            </div>
+            <button
+              class="button button-coral button-small"
+              type="button"
+              id="createCareInvite"
+            >
+              Generate invitation code
+            </button>
+            <p
+              class="invite-status"
+              id="clinicianInviteStatus"
+              role="status"
+              aria-live="polite"
+            ></p>
+            <div class="invite-result hidden" id="careInviteResult">
+              <span class="invite-code" id="careInviteResultCode">—</span>
+              <span class="invite-expiry" id="careInviteExpiry"></span>
             </div>
           </div>
         </section>
@@ -2935,9 +3005,9 @@
   <script src="runtime-config.js"></script>
   <p id="textSizeStatus" class="sr-only" role="status" aria-live="polite"></p>
   <script type="module" src="text-size.js?v=1"></script>
-  <script type="module" src="i18n.js?v=42"></script>
-  <script type="module" src="app-bootstrap.js?v=6"></script>
-  <script type="module" src="auth.js?v=36"></script>
+  <script type="module" src="i18n.js?v=44"></script>
+  <script type="module" src="app-bootstrap.js?v=9"></script>
+  <script type="module" src="auth.js?v=37"></script>
   <script type="module" src="ui.js?v=39"></script>
 </body>
 </html>
