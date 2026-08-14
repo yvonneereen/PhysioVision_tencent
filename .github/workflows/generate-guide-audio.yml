@@ -6,7 +6,7 @@ on:
       max_clips:
         description: "Maximum new clips to generate in this run"
         required: true
-        default: "20"
+        default: "26"
 
 permissions:
   contents: write

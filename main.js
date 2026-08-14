@@ -44,7 +44,7 @@ import {
 import { analysePatientTrend } from "./patient-dashboard-state.js?v=16";
 import { DRAFT_EXERCISES } from "./exercises/catalog.js?v=3";
 import { getSpeechLocale, translateText } from "./i18n.js?v=42";
-import { preloadPreparedGuidanceSpeech } from "./guide-audio.js?v=1";
+import { preloadPreparedGuidanceSpeech } from "./guide-audio.js?v=2";
 import {
   isMovementRestRequest,
   isMovementResumeRequest,
@@ -57,7 +57,7 @@ import {
   isSafariBrowser,
   readMicrophonePermissionState,
   voiceGuidance,
-} from "./voice-guidance.js?v=49";
+} from "./voice-guidance.js?v=50";
 import {
   PRACTICE_VIEWS,
   acceptedWellnessPlan,
@@ -5639,6 +5639,18 @@ function painConfirmationQuestion(level) {
   return `I heard that your pain is ${level} out of 10. Is that correct?`;
 }
 
+function spokenPainConfirmationQuestion(level) {
+  if (
+    painCheckinState?.context === "after"
+    && Number.isInteger(confirmedPreExercisePain)
+  ) {
+    // The exact before/after numbers remain visible. A fixed spoken prompt
+    // avoids 121 audio variants and keeps the response immediate.
+    return "Please confirm the pain levels shown on screen. Say yes or change.";
+  }
+  return painConfirmationQuestion(level);
+}
+
 const PAIN_SAFETY_REASSURANCE =
   "Thank you. I will ask a few short questions to help check whether it is safe "
   + "for you to proceed. Please stop moving and rest somewhere safe.";
@@ -5879,35 +5891,27 @@ function continueAfterPainCheckin(completed) {
       cameraSetupStatus.hidden = true;
       cameraSetupStatus.textContent = "";
       renderPrimaryCameraAction();
+      // A delayed or unusually long audio clip must not start speaking across
+      // the browser's camera permission prompt.
+      voiceGuidance.cancel();
       startCameraSetupAfterCountdown(pending);
     }, 1000);
   };
-  const spoken = speakMovementGuide(
-    "Pain level confirmed. Camera setup will begin in three seconds. Stay near your device. If your browser asks for camera access, choose Allow. I will tell you when to step back after the camera starts.",
+  // The visible countdown begins now. Speech playback is supplementary and
+  // can never hold camera setup in the three-second state.
+  beginVisibleCountdown();
+  speakMovementGuide(
+    "Pain confirmed. Stay near your device.",
     {
       key: `camera-setup:countdown:${completed.context}`,
       interrupt: true,
-      // This acknowledgement must be immediate; waiting for generated speech
-      // makes the confirmed answer feel like a stalled conversation.
+      allowGeneratedSpeech: false,
       voiceGroup: PAIN_PROMPT_VOICE_GROUP,
       rate: PAIN_PROMPT_RATE,
       pitch: PAIN_PROMPT_PITCH,
-      onEnd: beginVisibleCountdown,
+      onUnavailable: () => {},
     }
   );
-  if (!spoken) beginVisibleCountdown();
-  // Safari can occasionally omit SpeechSynthesis's end event. Preserve a
-  // fallback, but never open the camera permission prompt while the sentence
-  // is still playing because Safari will duck that speech route.
-  const beginCountdownWhenSpeechIsIdle = () => {
-    if (!cameraSetupCountdown || cameraSetupCountdown.timer) return;
-    if (voiceGuidance.isSpeaking) {
-      window.setTimeout(beginCountdownWhenSpeechIsIdle, 500);
-      return;
-    }
-    beginVisibleCountdown();
-  };
-  window.setTimeout(beginCountdownWhenSpeechIsIdle, 12000);
 }
 
 function renderRecordedPain({ painLevel, context }) {
@@ -6085,8 +6089,15 @@ function speakPainPrompt(
     // Safety questions must begin without waiting for a network voice request.
     // Keep the initial question and every follow-up on the same exact voice.
     voiceGroup: PAIN_PROMPT_VOICE_GROUP,
+    allowGeneratedSpeech: false,
     rate: Number.isFinite(rate) ? rate : PAIN_PROMPT_RATE,
     pitch: Number.isFinite(pitch) ? pitch : PAIN_PROMPT_PITCH,
+    onUnavailable: () => {
+      if (painCheckinState?.stage === expectedStage) {
+        voiceCheckinStatusEl.textContent =
+          "Voice audio did not load. Listening is starting now; you can also use the on-screen choices.";
+      }
+    },
     onEnd: () => armVoiceListening(beginListening),
   });
   if (!spoken && handsFreeVoiceEnabled) {
@@ -7538,6 +7549,7 @@ function beginPainConfirmation() {
 
   const level = painCheckinState.painLevel;
   const question = painConfirmationQuestion(level);
+  const spokenQuestion = spokenPainConfirmationQuestion(level);
   painCheckinTitleEl.textContent = "Please confirm your pain level";
   painConfirmationSummaryEl.textContent = question;
   voiceCheckinStatusEl.textContent = handsFreeVoiceEnabled
@@ -7546,7 +7558,7 @@ function beginPainConfirmation() {
       ? "Select Yes, that’s correct or Change my answer. Voice input is also available."
       : "Select Yes, that’s correct or Change my answer.";
   speakPainPrompt(
-    question,
+    spokenQuestion,
     `checkin:${painCheckinState.context}:pain-confirmation:${level}`,
     "confirm-pain"
   );

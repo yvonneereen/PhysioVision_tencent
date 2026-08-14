@@ -19,8 +19,19 @@ function add(text) {
   phrases.push(phrase);
 }
 
-// The first quota-safe batch covers the common 10-repetition session before
-// moving into setup, safety and less common exercise-specific phrases.
+// The first quota-safe batch covers the complete pre-camera exchange. These
+// clips must never wait for live TTS because a patient is still beside the
+// device and may need to respond to a browser permission prompt.
+[
+  "Before we begin, how is your pain right now? Please give me a number from zero to ten.",
+  "You stopped the exercise. How is your pain now? Please give me a number from zero to ten.",
+  "You’ve finished the exercise. How is your pain now? Please give me a number from zero to ten.",
+  "Please confirm the pain levels shown on screen. Say yes or change.",
+].forEach(add);
+for (let level = 0; level <= 10; level += 1) {
+  add(`I heard that your pain is ${level} out of 10. Is that correct?`);
+}
+add("Pain confirmed. Stay near your device.");
 for (let number = 1; number <= 10; number += 1) add(`Rep ${number}.`);
 
 [
@@ -35,7 +46,6 @@ for (let number = 1; number <= 10; number += 1) add(`Rep ${number}.`);
   "Final repetition. Stand tall and hold still until I say the exercise is complete.",
   "Okay. I will leave the exercise open. Choose Finish exercise and check in when you are ready.",
   "Can you tell me what made you stop? Is it say pain, tired, dizzy or breathless or exercise difficulty.",
-  "Pain level confirmed. Camera setup will begin in three seconds. Stay near your device. If your browser asks for camera access, choose Allow. I will tell you when to step back after the camera starts.",
   "Your camera guide is paused for a rest. Your recognized repetitions are kept. When you are ready, say Hey Guide, continue, or select Resume camera guide.",
   "Okay. Resuming your camera guide. Your repetitions are still saved.",
 ].forEach(add);

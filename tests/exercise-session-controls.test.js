@@ -700,8 +700,8 @@ assert.match(
 );
 assert.match(
   source,
-  /function speakPainPrompt[\s\S]*?speakMovementGuide\(question[\s\S]*?voiceGroup:\s*PAIN_PROMPT_VOICE_GROUP[\s\S]*?rate:[\s\S]*?pitch:/,
-  "the pain question and confirmation should retain one voice and speaking style"
+  /function speakPainPrompt[\s\S]*?speakMovementGuide\(question[\s\S]*?voiceGroup:\s*PAIN_PROMPT_VOICE_GROUP[\s\S]*?allowGeneratedSpeech:\s*false[\s\S]*?rate:[\s\S]*?pitch:/,
+  "pain prompts should retain one prepared voice without waiting for live TTS"
 );
 
 const calibrationFlowStart = source.indexOf(
@@ -1146,8 +1146,8 @@ assert.match(
 );
 assert.match(
   countdownSource,
-  /Camera setup will begin in three seconds\. Stay near your device\.[\s\S]*?choose Allow\.[\s\S]*?tell you when to step back/,
-  "the countdown should keep the patient near the device for camera permission before asking them to step back"
+  /beginVisibleCountdown\(\);[\s\S]*?speakMovementGuide\([\s\S]*?Pain confirmed\. Stay near your device\.[\s\S]*?allowGeneratedSpeech:\s*false/,
+  "the countdown should start immediately and must not wait for live TTS"
 );
 assert.doesNotMatch(
   countdownSource,
@@ -1164,10 +1164,20 @@ assert.match(
   /speakMovementGuide\([\s\S]*?voiceGroup:\s*PAIN_PROMPT_VOICE_GROUP/,
   "the post-confirmation handoff should speak immediately in the same voice"
 );
+assert.doesNotMatch(
+  countdownSource,
+  /onEnd:\s*beginVisibleCountdown|beginCountdownWhenSpeechIsIdle|voiceGuidance\.isSpeaking/,
+  "speech generation or playback must never hold the visible countdown at three seconds"
+);
 assert.match(
   countdownSource,
-  /onEnd:\s*beginVisibleCountdown[\s\S]*?voiceGuidance\.isSpeaking[\s\S]*?setTimeout\(beginCountdownWhenSpeechIsIdle, 12000\)/,
-  "camera permission fallback should wait until the complete countdown instruction is silent"
+  /voiceGuidance\.cancel\(\);[\s\S]*?startCameraSetupAfterCountdown\(pending\)/,
+  "late audio should be cancelled before the browser camera permission step"
+);
+assert.match(
+  functionSource("spokenPainConfirmationQuestion", "isPainSafetyStage"),
+  /context === "after"[\s\S]*?Please confirm the pain levels shown on screen\. Say yes or change\.[\s\S]*?painConfirmationQuestion\(level\)/,
+  "after-exercise pain comparisons should use a fixed prepared spoken prompt while retaining exact numbers on screen"
 );
 const cancelCountdownSource = functionSource(
   "cancelCameraSetupCountdown",

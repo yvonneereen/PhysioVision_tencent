@@ -4,6 +4,8 @@ const PREPARED_AUDIO_ROOT = "/assets/audio/movement-guide";
 const GENERATED_AUDIO_CACHE = "physiovision-generated-guide-audio-v1";
 const GENERATED_AUDIO_CACHE_LIMIT = 96;
 const GENERATED_AUDIO_SESSION_LIMIT = 8;
+const PREPARED_AUDIO_FETCH_TIMEOUT_MS = 2000;
+const GENERATED_AUDIO_REQUEST_TIMEOUT_MS = 8000;
 
 export function normalizeGuidanceTranscript(text) {
   return String(text ?? "").replace(/\s+/g, " ").trim();
@@ -48,13 +50,39 @@ export class GuidanceAudioStore {
     {
       fetchImpl = browserWindow?.fetch?.bind(browserWindow) ?? globalThis.fetch,
       generateSpeech = generateGuidanceSpeech,
+      preparedFetchTimeoutMs = PREPARED_AUDIO_FETCH_TIMEOUT_MS,
+      generatedSpeechTimeoutMs = GENERATED_AUDIO_REQUEST_TIMEOUT_MS,
     } = {},
   ) {
     this.window = browserWindow;
     this.fetch = fetchImpl;
     this.generateSpeech = generateSpeech;
+    this.preparedFetchTimeoutMs = preparedFetchTimeoutMs;
+    this.generatedSpeechTimeoutMs = generatedSpeechTimeoutMs;
     this.manifestPromises = new Map();
     this.generatedThisSession = 0;
+  }
+
+  settleWithin(promise, timeoutMs, fallback = null) {
+    const delay = Number(timeoutMs);
+    if (!Number.isFinite(delay) || delay <= 0) {
+      return Promise.resolve(promise).catch(() => fallback);
+    }
+    const schedule = this.window?.setTimeout?.bind(this.window)
+      ?? globalThis.setTimeout;
+    const unschedule = this.window?.clearTimeout?.bind(this.window)
+      ?? globalThis.clearTimeout;
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        unschedule(timer);
+        resolve(value);
+      };
+      const timer = schedule(() => finish(fallback), delay);
+      Promise.resolve(promise).then(finish, () => finish(fallback));
+    });
   }
 
   origin() {
@@ -74,12 +102,18 @@ export class GuidanceAudioStore {
       this.manifestPromises.set(speechLocale, (async () => {
         if (typeof this.fetch !== "function") return { entries: {} };
         try {
-          const response = await this.fetch(this.manifestUrl(speechLocale), {
-            cache: "force-cache",
-            headers: { Accept: "application/json" },
-          });
+          const response = await this.settleWithin(
+            this.fetch(this.manifestUrl(speechLocale), {
+              cache: "force-cache",
+              headers: { Accept: "application/json" },
+            }),
+            this.preparedFetchTimeoutMs,
+          );
           if (!response.ok) return { entries: {} };
-          const manifest = await response.json();
+          const manifest = await this.settleWithin(
+            response.json(),
+            this.preparedFetchTimeoutMs,
+          );
           return manifest && typeof manifest.entries === "object"
             ? manifest
             : { entries: {} };
@@ -102,10 +136,18 @@ export class GuidanceAudioStore {
     if (!filename) return null;
     try {
       const audioUrl = new URL(filename, this.manifestUrl(locale)).toString();
-      const response = await this.fetch(audioUrl, { cache: "force-cache" });
+      const response = await this.settleWithin(
+        this.fetch(audioUrl, { cache: "force-cache" }),
+        this.preparedFetchTimeoutMs,
+      );
       if (!response.ok) return null;
+      const audioBytes = await this.settleWithin(
+        response.arrayBuffer(),
+        this.preparedFetchTimeoutMs,
+      );
+      if (!audioBytes) return null;
       const audio = bytesToBase64(
-        new Uint8Array(await response.arrayBuffer()),
+        new Uint8Array(audioBytes),
         this.window,
       );
       return {
@@ -198,12 +240,20 @@ export class GuidanceAudioStore {
       return null;
     }
     this.generatedThisSession += 1;
-    const generated = await this.generateSpeech({
+    const generation = Promise.resolve(this.generateSpeech({
       text: transcript,
       locale: speechLocale,
+    })).then(async (generated) => {
+      await this.saveGeneratedSpeech(speechLocale, hash, generated);
+      return generated;
     });
-    await this.saveGeneratedSpeech(speechLocale, hash, generated);
-    return generated;
+    // Never hold the visible guidance flow indefinitely for a live TTS call.
+    // A late response may still finish and populate the device cache, but it
+    // will not suddenly begin speaking after the user has already moved on.
+    return this.settleWithin(
+      generation,
+      this.generatedSpeechTimeoutMs,
+    );
   }
 
   async clearGenerated() {

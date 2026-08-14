@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 import {
   GuidanceAudioStore,
@@ -10,6 +12,28 @@ assert.equal(
   normalizeGuidanceTranscript("  Rep   four. \n"),
   "Rep four.",
 );
+
+const catalog = JSON.parse(execFileSync(
+  process.execPath,
+  [fileURLToPath(new URL("../scripts/export-guide-audio-catalog.mjs", import.meta.url))],
+  { encoding: "utf8" },
+));
+const firstPreparedBatch = catalog.phrases.slice(0, 26);
+for (const prompt of [
+  "Before we begin, how is your pain right now? Please give me a number from zero to ten.",
+  "Pain confirmed. Stay near your device.",
+  "Please confirm the pain levels shown on screen. Say yes or change.",
+  ...Array.from(
+    { length: 11 },
+    (_, level) => `I heard that your pain is ${level} out of 10. Is that correct?`,
+  ),
+  ...Array.from({ length: 10 }, (_, index) => `Rep ${index + 1}.`),
+]) {
+  assert.ok(
+    firstPreparedBatch.includes(prompt),
+    `the first prepared batch should contain: ${prompt}`,
+  );
+}
 
 class MemoryCache {
   constructor() {
@@ -150,6 +174,49 @@ assert.equal(
   limitedGenerationRequests,
   8,
   "one page session must not generate unlimited live voice requests",
+);
+
+const preparedTimeoutStore = new GuidanceAudioStore({
+  ...browserWindow,
+  caches: null,
+}, {
+  fetchImpl: async () => new Promise(() => {}),
+  generateSpeech: async () => ({ audio: "AQ==" }),
+  preparedFetchTimeoutMs: 5,
+});
+const preparedTimeoutStarted = Date.now();
+assert.equal(await preparedTimeoutStore.getSpeech({
+  text: "A prepared prompt must not freeze the interface.",
+  locale: "en-SG",
+  allowGeneration: false,
+}), null);
+assert.ok(
+  Date.now() - preparedTimeoutStarted < 100,
+  "a stalled prepared-audio request should release the interface quickly",
+);
+
+let timedOutGenerationRequests = 0;
+const generationTimeoutStore = new GuidanceAudioStore({
+  ...browserWindow,
+  caches: null,
+}, {
+  fetchImpl: async () => new Response("not found", { status: 404 }),
+  generateSpeech: async () => {
+    timedOutGenerationRequests += 1;
+    return new Promise(() => {});
+  },
+  generatedSpeechTimeoutMs: 5,
+});
+const generationTimeoutStarted = Date.now();
+assert.equal(await generationTimeoutStore.getSpeech({
+  text: "A live answer must not freeze the interface.",
+  locale: "en-SG",
+  allowGeneration: true,
+}), null);
+assert.equal(timedOutGenerationRequests, 1);
+assert.ok(
+  Date.now() - generationTimeoutStarted < 100,
+  "a stalled live TTS request should stop blocking after its deadline",
 );
 
 console.log("guide audio tests passed");
