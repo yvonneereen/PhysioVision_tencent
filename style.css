@@ -7539,15 +7539,42 @@ details.metrics summary {
 .clinical-plan-card > header span:first-child { color: var(--muted); font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
 .clinical-plan-card h4 { margin: 3px 0 0; color: var(--ink); font-size: 1.1rem; }
 .clinical-plan-draft-badge { padding: 4px 9px; border-radius: 999px; color: var(--green); background: var(--mint); font-size: .76rem; font-weight: 750; }
+.clinical-plan-draft-badge.is-assigned { color: #fff; background: var(--green); }
 .clinical-plan-context { margin: 14px 16px 0; padding: 11px 12px; border-left: 3px solid var(--coral); border-radius: 8px; background: var(--paper); }
 .clinical-plan-context strong { display: block; margin-bottom: 3px; color: var(--ink); font-size: .78rem; }
 .clinical-plan-context p { margin: 0; padding: 0; color: var(--muted); background: transparent; font-size: .82rem; line-height: 1.45; }
 .clinical-plan-summary { margin: 13px 16px; padding: 0 !important; color: var(--ink); background: transparent !important; font-size: .9rem; line-height: 1.5; }
-.clinical-plan-exercises { margin: 0 16px 15px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
-.clinical-plan-row { display: grid; grid-template-columns: minmax(140px, 1.5fr) .65fr .75fr; gap: 12px; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: .84rem; }
+.clinical-plan-stage-field { display: grid; gap: 6px; margin: 0 16px 15px; }
+.clinical-plan-stage-field > label,
+.clinical-plan-exercises > legend { color: var(--ink); font-size: .82rem; font-weight: 750; }
+.clinical-plan-stage-field select { width: 100%; min-height: 42px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; color: var(--ink); background: var(--white); font: inherit; font-size: .86rem; }
+.clinical-plan-stage-field small { color: var(--muted); font-size: .75rem; line-height: 1.4; }
+.clinical-plan-exercises { min-width: 0; margin: 0 16px 15px; padding: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.clinical-plan-exercises > legend { margin-left: 10px; padding: 0 4px; }
+.clinical-plan-editor-help { margin: 0; padding: 9px 12px !important; color: var(--muted) !important; background: var(--paper) !important; font-size: .76rem !important; line-height: 1.4 !important; }
+.clinical-plan-row { display: grid; grid-template-columns: minmax(190px, 1.6fr) repeat(3, minmax(68px, .45fr)); gap: 10px; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: .84rem; }
 .clinical-plan-row:last-child { border-bottom: 0; }
 .clinical-plan-row-head { color: var(--muted); background: var(--paper); font-size: .72rem; font-weight: 700; text-transform: uppercase; }
 .clinical-plan-row.is-unavailable { color: var(--muted); opacity: .7; }
+.clinical-plan-row.is-excluded { background: var(--paper); opacity: .58; }
+.clinical-plan-activity-choice { display: flex; align-items: center; gap: 9px; min-width: 0; cursor: pointer; }
+.clinical-plan-activity-choice input { width: 18px; height: 18px; flex: 0 0 auto; accent-color: var(--green); }
+.clinical-plan-activity-choice span { min-width: 0; }
+.clinical-plan-activity-choice strong,
+.clinical-plan-activity-choice small { display: block; }
+.clinical-plan-activity-choice strong { overflow-wrap: anywhere; }
+.clinical-plan-activity-choice small { margin-top: 2px; color: var(--muted); font-size: .7rem; font-weight: 500; }
+.clinical-plan-dose-input { width: 100%; min-height: 38px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: var(--white); font: inherit; font-size: .84rem; }
+.clinical-plan-dose-input:focus,
+.clinical-plan-stage-field select:focus { border-color: var(--green); outline: 3px solid rgba(61, 145, 102, .14); }
+.clinical-plan-approval { display: flex; align-items: flex-start; gap: 9px; margin: 0 16px 14px; padding: 11px 12px; border: 1px solid #d7c58f; border-radius: 9px; color: var(--ink); background: #fff9e8; font-size: .78rem; font-weight: 650; line-height: 1.45; cursor: pointer; }
+.clinical-plan-approval input { width: 18px; height: 18px; flex: 0 0 auto; margin-top: 1px; accent-color: var(--green); }
+.clinical-plan-inline-error,
+.clinical-plan-form-status { margin: 0 16px 12px !important; padding: 0 !important; color: var(--coral-dark) !important; background: transparent !important; font-size: .78rem !important; line-height: 1.4 !important; }
+.clinical-plan-form-status:empty { display: none; }
+.clinical-plan-assigned-summary { margin: 15px 16px; padding: 13px 14px; border: 1px solid #add6c0; border-radius: 10px; background: var(--green-light); }
+.clinical-plan-assigned-summary strong { color: var(--green); }
+.clinical-plan-assigned-summary p { margin: 4px 0 0; padding: 0; color: var(--muted); background: transparent; font-size: .82rem; line-height: 1.45; }
 .clinical-plan-card > footer { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line); background: var(--paper); }
 .clinical-ai-status { min-height: 1.2em; margin: 0 0 8px; color: var(--muted); font-size: .85rem; }
 .clinical-ai-form textarea { min-height: 54px; }
@@ -7767,8 +7794,8 @@ details.metrics summary {
   .triage-action-buttons { justify-content: flex-start; }
   .triage-card .button { align-self: flex-start; }
   .triage-card-error { max-width: none; text-align: left; }
-  .clinical-plan-row { grid-template-columns: 1fr 1fr; }
-  .clinical-plan-row > :last-child { grid-column: 1 / -1; }
+  .clinical-plan-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .clinical-plan-edit-row > :first-child { grid-column: 1 / -1; }
   .clinical-plan-row-head { display: none; }
   .clinical-plan-card > footer { align-items: stretch; flex-direction: column; }
 }

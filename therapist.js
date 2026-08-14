@@ -1,13 +1,13 @@
 import {
   getMe, getPatients, isLoggedIn,
-  getExercises, getPrescriptions, createPrescription,
+  getExercises, getPrescriptions, createPrescription, assignAiDraftProgramme,
   getConsultations, initiateConsultation, updateConsultation, confirmConsultation, cancelConsultation, completeConsultation,
   getPatientSessions, getPatientPainCheckins,
   getCareMessages, sendCareMessage, getCareMessageThreads,
   getClinicianAiSession, getClinicianAiSessions, sendAgentMessage,
   getTriageQueue, claimTriagePatient, declineTriagePatient,
   dischargePatient,
-} from "./api.js?v=35";
+} from "./api.js?v=36";
 import { excludeRosterPatientsFromTriage } from "./therapist-triage-state.js?v=1";
 import { formatClinicalAssistantText } from "./clinical-ai-format.js?v=1";
 
@@ -1238,19 +1238,35 @@ function aiMessageRows() {
         <button type="button" data-ai-prompt="assign Half Squats to Sarah"><code>assign [exercise] to [name]</code><span>Prescribe one exercise</span></button>
       </section>
       <section><h4>AI programme builder</h4>
-        <button type="button" data-ai-prompt="build a plan for Sarah"><code>build a plan for [name]</code><span>Draft a programme</span></button>
+        <button type="button" data-ai-prompt="build a plan for Sarah"><code>build a plan for [name]</code><span>Create an editable draft</span></button>
         <button type="button" data-ai-prompt="revise Sarah reduce the intensity"><code>revise [name] [change]</code><span>Refine the draft</span></button>
-        <button type="button" data-ai-prompt="accept plan for Sarah"><code>accept plan for [name]</code><span>Create prescriptions</span></button>
         <button type="button" data-ai-prompt="summary"><code>summary</code><span>Whole-roster overview</span></button>
       </section>
     </div>`;
-  const planContent = (plan) => {
+  const planContent = (plan, message, messageIndex) => {
     const exercises = Array.isArray(plan?.exercises) ? plan.exercises : [];
+    const stages = Array.isArray(plan?.stages) ? plan.stages : [];
+    if (plan?.assigned) {
+      const assignedCount = Number(plan.assigned.exercise_count || exercises.length);
+      return `
+        <article class="clinical-plan-card clinical-plan-card-assigned">
+          <header>
+            <div><span>Assigned programme</span><h4>${escapeHtml(plan.patient_name || "Patient")}</h4></div>
+            <span class="clinical-plan-draft-badge is-assigned">Sent to patient</span>
+          </header>
+          <div class="clinical-plan-assigned-summary">
+            <strong>${escapeHtml(plan.assigned.stage_label || "Clinician-reviewed programme")}</strong>
+            <p>${escapeHtml(assignedCount)} ${assignedCount === 1 ? "activity" : "activities"} assigned. The programme is available on the patient home page.</p>
+          </div>
+        </article>`;
+    }
+    const formKey = message?.id || messageIndex;
+    const canAssign = Boolean(plan?.draft_id);
     return `
-      <article class="clinical-plan-card">
+      <form class="clinical-plan-card clinical-plan-editor" data-ai-plan-form data-message-index="${messageIndex}" data-draft-id="${escapeHtml(plan.draft_id || "")}" data-message-id="${escapeHtml(message?.id || "")}">
         <header>
           <div><span>AI programme draft</span><h4>${escapeHtml(plan.patient_name || "Patient")}</h4></div>
-          <span class="clinical-plan-draft-badge">Draft</span>
+          <span class="clinical-plan-draft-badge">Clinician review required</span>
         </header>
         ${plan.clinical_context ? `
           <div class="clinical-plan-context">
@@ -1258,28 +1274,48 @@ function aiMessageRows() {
             <p>${escapeHtml(plan.clinical_context)}</p>
           </div>` : ""}
         ${plan.summary ? `<p class="clinical-plan-summary">${escapeHtml(plan.summary)}</p>` : ""}
-        <div class="clinical-plan-exercises">
-          <div class="clinical-plan-row clinical-plan-row-head"><span>Exercise</span><span>Dose</span><span>Frequency</span></div>
-          ${exercises.map(exercise => `
-            <div class="clinical-plan-row${exercise.available ? "" : " is-unavailable"}">
-              <strong>${escapeHtml(exercise.name)}</strong>
-              <span>${escapeHtml(exercise.sets ?? "—")} × ${escapeHtml(exercise.reps ?? "—")}</span>
-              <span>${escapeHtml(exercise.days_per_week ?? "—")}×/week</span>
-            </div>`).join("")}
+        <div class="clinical-plan-stage-field">
+          <label for="clinical-plan-stage-${escapeHtml(formKey)}">Rehabilitation stage</label>
+          <select id="clinical-plan-stage-${escapeHtml(formKey)}" name="stage" required>
+            <option value="">Choose a stage…</option>
+            ${stages.map(stage => `<option value="${escapeHtml(stage.value)}">${escapeHtml(stage.label)}</option>`).join("")}
+          </select>
+          <small>The physiotherapist—not the AI—selects the appropriate stage.</small>
         </div>
+        <fieldset class="clinical-plan-exercises">
+          <legend>Activities and dosage</legend>
+          <p class="clinical-plan-editor-help">Untick an activity to leave it out. Adjust the AI-suggested dosage before assigning.</p>
+          <div class="clinical-plan-row clinical-plan-row-head"><span>Include activity</span><span>Sets</span><span>Repetitions</span><span>Days/week</span></div>
+          ${exercises.map(exercise => `
+            <div class="clinical-plan-row clinical-plan-edit-row${exercise.available ? "" : " is-unavailable"}" data-plan-exercise-row data-exercise-id="${escapeHtml(exercise.id)}" data-hold-seconds="${escapeHtml(exercise.hold_seconds ?? "")}">
+              <label class="clinical-plan-activity-choice">
+                <input type="checkbox" name="included-exercise" value="${escapeHtml(exercise.id)}" ${exercise.available ? "checked" : "disabled"}>
+                <span><strong>${escapeHtml(exercise.name)}</strong><small>${exercise.available ? "AI suggested" : "Unavailable in reviewed catalogue"}</small></span>
+              </label>
+              <label><span class="sr-only">Sets for ${escapeHtml(exercise.name)}</span><input class="clinical-plan-dose-input" data-dose="sets" type="number" min="1" max="10" value="${escapeHtml(exercise.sets ?? 1)}" required ${exercise.available ? "" : "disabled"}></label>
+              <label><span class="sr-only">Repetitions for ${escapeHtml(exercise.name)}</span><input class="clinical-plan-dose-input" data-dose="reps" type="number" min="1" max="50" value="${escapeHtml(exercise.reps ?? 6)}" required ${exercise.available ? "" : "disabled"}></label>
+              <label><span class="sr-only">Days per week for ${escapeHtml(exercise.name)}</span><input class="clinical-plan-dose-input" data-dose="days" type="number" min="1" max="7" value="${escapeHtml(exercise.days_per_week ?? 3)}" required ${exercise.available ? "" : "disabled"}></label>
+            </div>`).join("")}
+        </fieldset>
+        <label class="clinical-plan-approval">
+          <input type="checkbox" name="clinical-review-confirmed" required>
+          <span>I have reviewed the stage, selected activities and dosage. I understand this replaces the patient’s current active programme.</span>
+        </label>
+        ${canAssign ? "" : `<p class="clinical-plan-inline-error">This older saved response is read-only. Build or revise the plan to create a current editable draft.</p>`}
+        <p class="clinical-plan-form-status" data-plan-form-status role="status"></p>
         <footer>
-          <button type="button" class="button button-light button-small" data-ai-fill="revise ${escapeHtml(plan.patient_first_name || "patient")} ">Revise draft</button>
-          <button type="button" class="button button-coral button-small" data-ai-fill="accept plan for ${escapeHtml(plan.patient_first_name || "patient")}">Review and accept</button>
+          <button type="button" class="button button-light button-small" data-ai-fill="revise ${escapeHtml(plan.patient_first_name || "patient")} ">Revise with AI</button>
+          <button type="submit" class="button button-coral button-small" ${canAssign ? "" : "disabled"}>Assign and send to patient</button>
         </footer>
-      </article>`;
+      </form>`;
   };
-  return aiConversationMessages.map(message => `
+  return aiConversationMessages.map((message, messageIndex) => `
     <div class="clinical-ai-message clinical-ai-message-${message.sender}">
       <span>${message.sender === "user" ? "You" : "PhysioVision AI"}</span>
       ${message.command === "help"
         ? helpContent
         : ["build_plan", "revise_plan"].includes(message.command) && message.data
-          ? planContent(message.data)
+          ? planContent(message.data, message, messageIndex)
           : message.sender === "assistant"
             ? formatClinicalAssistantText(message.body)
             : `<p>${escapeHtml(message.body)}</p>`}
@@ -1331,6 +1367,60 @@ function showClinicalAssistant() {
   const thread = panel.querySelector("#clinical-ai-thread");
   if (thread) thread.scrollTop = thread.scrollHeight;
   panel.querySelector("#clinical-ai-form")?.addEventListener("submit", handleClinicalAssistantMessage);
+  panel.querySelectorAll("[data-ai-plan-form]").forEach(form =>
+    form.addEventListener("submit", handleAssignAiProgramme));
+}
+
+async function handleAssignAiProgramme(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const status = form.querySelector("[data-plan-form-status]");
+  const button = form.querySelector('button[type="submit"]');
+  const selectedRows = [...form.querySelectorAll("[data-plan-exercise-row]")]
+    .filter(row => row.querySelector('input[name="included-exercise"]')?.checked);
+
+  if (!selectedRows.length) {
+    if (status) status.textContent = "Include at least one activity before assigning.";
+    return;
+  }
+
+  const exercises = selectedRows.map(row => {
+    const holdValue = row.getAttribute("data-hold-seconds");
+    return {
+      exercise: row.getAttribute("data-exercise-id"),
+      sets: Number(row.querySelector('[data-dose="sets"]').value),
+      reps: Number(row.querySelector('[data-dose="reps"]').value),
+      days_per_week: Number(row.querySelector('[data-dose="days"]').value),
+      hold_seconds: holdValue === "" ? null : Number(holdValue),
+    };
+  });
+  const messageIndex = Number(form.getAttribute("data-message-index"));
+  const message = aiConversationMessages[messageIndex];
+  const payload = {
+    draft: form.getAttribute("data-draft-id"),
+    stage: form.elements.stage.value,
+    exercises,
+  };
+  const messageId = form.getAttribute("data-message-id");
+  if (messageId) payload.message_id = messageId;
+
+  button.disabled = true;
+  if (status) status.textContent = "Assigning the reviewed programme and notifying the patient…";
+  try {
+    const result = await assignAiDraftProgramme(payload);
+    if (message?.data) message.data.assigned = result.assigned;
+    [state.prescriptions, state.patients] = await Promise.all([
+      getPrescriptions().then(unwrap),
+      getPatients().then(unwrap),
+    ]);
+    renderProgrammes();
+    renderPatientTable(state.patients);
+    await refreshAiSessionList();
+    if (activeConversation === AI_CONVERSATION_ID) showClinicalAssistant();
+  } catch (error) {
+    if (status) status.textContent = error.message || "Could not assign this programme.";
+    button.disabled = false;
+  }
 }
 
 function startNewClinicalAssistantSession() {
@@ -1353,6 +1443,7 @@ async function openClinicalAssistantSession(sessionId) {
     const index = aiSessions.findIndex(item => String(item.id) === String(session.id));
     if (index >= 0) aiSessions[index] = { ...aiSessions[index], ...session };
     aiConversationMessages = (session.messages || []).map(message => ({
+      id: message.id,
       sender: message.role,
       body: message.body,
       command: message.command || null,
@@ -1410,6 +1501,7 @@ async function handleClinicalAssistantMessage(event) {
     const result = await sendAgentMessage(message, {}, history, activeAiSessionId);
     activeAiSessionId = result.session_id || activeAiSessionId;
     aiConversationMessages.push({
+      id: result.message_id || null,
       sender: "assistant",
       body: result.reply,
       command: result.command || null,
@@ -1674,6 +1766,14 @@ document.addEventListener("input", (e) => {
 });
 
 document.addEventListener("change", (e) => {
+  if (e.target.matches('input[name="included-exercise"]')) {
+    const row = e.target.closest("[data-plan-exercise-row]");
+    row?.classList.toggle("is-excluded", !e.target.checked);
+    row?.querySelectorAll("[data-dose]").forEach(input => {
+      input.disabled = !e.target.checked;
+    });
+    return;
+  }
   if (["rx-filter-patient", "rx-filter-status", "rx-filter-completion"].includes(e.target.id)) {
     renderProgrammes();
   }

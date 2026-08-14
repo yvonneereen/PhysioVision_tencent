@@ -882,6 +882,21 @@ assert.match(
 );
 assert.match(
   source,
+  /!fb\.trackingReady[\s\S]*?bannerState = "visibility"[\s\S]*?movementTrackingGuidance\(fb\)/,
+  "missing required joints should pause the movement and show positioning guidance"
+);
+assert.match(
+  source,
+  /function movementTrackingGuidance[\s\S]*?missingLandmarks[\s\S]*?Pause your movement\.[\s\S]*?required joints are visible/,
+  "visibility guidance should name hidden joints and explain when measurement resumes"
+);
+assert.match(
+  source,
+  /updateFeedbackPanel\(\{\}, frameTimestamp\)[\s\S]*?Movement paused — I can’t see you/,
+  "a fully lost pose should pause engine progress instead of completing a partial repetition"
+);
+assert.match(
+  source,
   /I cannot measure either knee angle\.[\s\S]*?both hips, knees, ankles, and feet are visible/,
   "a blocked squat measurement should name the missing knee angles and required landmarks"
 );

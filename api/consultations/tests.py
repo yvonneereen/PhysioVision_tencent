@@ -13,6 +13,7 @@ from api.core.models import (
 from api.consultations.models import ConsultationInitiator, ConsultationStatus
 from api.consultations.drafting import (
     ConsultationDraftUnavailable,
+    _normalize_draft,
     build_consultation_facts,
 )
 
@@ -304,6 +305,17 @@ class PatientConsultationBookingTests(APITestCase):
         self.assertEqual(facts['recent_sessions'], [])
         self.assertEqual(facts['recent_pain_checkins'], [])
         self.assertEqual(facts['open_review_flags'], [])
+
+    def test_generic_record_review_closing_is_removed_from_ai_draft(self):
+        draft = _normalize_draft(
+            'Before activity, I recorded pain of 8 in my right shoulder. '
+            'Please review these recent PhysioVision records when you are able.'
+        )
+
+        self.assertEqual(
+            draft,
+            'Before activity, I recorded pain of 8 in my right shoulder.',
+        )
 
 
 class CareMessageTests(APITestCase):

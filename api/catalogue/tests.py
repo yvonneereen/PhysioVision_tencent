@@ -5,13 +5,17 @@ from rest_framework.test import APITestCase
 
 from api.core.models import (
     CarePath,
+    ClinicianAiMessage,
+    ClinicianAiSession,
     ClinicianProfile,
     PatientProfile,
+    SlackPlanDraft,
     User,
     UserRole,
 )
+from api.consultations.models import CareMessage, MessageSender
 
-from .models import Exercise
+from .models import Exercise, Prescription
 from api.sessions.models import Session
 
 
@@ -194,3 +198,118 @@ class PrescriptionAccessTests(APITestCase):
         patient_list = self.client.get(self.endpoint)
         self.assertEqual(patient_list.status_code, 200)
         self.assertEqual(patient_list.data, [])
+
+    def test_reviewed_ai_draft_is_edited_assigned_and_sent_to_patient(self):
+        draft = SlackPlanDraft.objects.create(
+            patient=self.patient,
+            clinician=self.clinician,
+            plan={
+                'summary': 'A gradual draft.',
+                'days': [{'exercise_ids': [self.exercise.id]}],
+                'constraints': {'days_per_week': 3},
+            },
+            preferences={'days_per_week': 3},
+        )
+        session = ClinicianAiSession.objects.create(
+            clinician=self.clinician,
+            title='Draft a programme',
+        )
+        message = ClinicianAiMessage.objects.create(
+            session=session,
+            role='assistant',
+            command='build_plan',
+            body='Draft programme',
+            data={'draft_id': str(draft.id)},
+        )
+        previous = Prescription.objects.create(
+            patient=self.patient,
+            clinician=self.clinician,
+            exercise=self.exercise,
+            sets=1,
+            reps=5,
+            days_per_week='2',
+            valid_from=timezone.localdate(),
+        )
+        self.client.force_authenticate(self.clinician_user)
+
+        response = self.client.post(
+            f'{self.endpoint}assign-draft/',
+            {
+                'draft': str(draft.id),
+                'message_id': str(message.id),
+                'stage': 'strength_control',
+                'exercises': [{
+                    'exercise': self.exercise.id,
+                    'sets': 3,
+                    'reps': 9,
+                    'hold_seconds': 2,
+                    'days_per_week': 4,
+                }],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        previous.refresh_from_db()
+        self.assertFalse(previous.is_active)
+        assigned = Prescription.objects.get(
+            patient=self.patient,
+            exercise=self.exercise,
+            is_active=True,
+        )
+        self.assertEqual((assigned.sets, assigned.reps), (3, 9))
+        self.assertEqual(assigned.days_per_week, '4')
+        self.assertIn('Stage 2', assigned.notes)
+        self.assertFalse(SlackPlanDraft.objects.filter(pk=draft.id).exists())
+        notification = CareMessage.objects.get(
+            patient=self.patient,
+            sender=MessageSender.CLINICIAN,
+        )
+        self.assertIn('ready on your home page', notification.body)
+        message.refresh_from_db()
+        self.assertEqual(
+            message.data['assigned']['stage'],
+            'strength_control',
+        )
+
+    def test_ai_draft_publish_rejects_activity_not_in_saved_draft(self):
+        other_exercise = Exercise.objects.create(
+            id='not-suggested',
+            name='Not Suggested',
+            category='mobility',
+            camera_direction='front',
+            rep_rule='start → finish → start',
+            tracked_angles_config={},
+            phases_config=[],
+            cues_config={},
+        )
+        draft = SlackPlanDraft.objects.create(
+            patient=self.patient,
+            clinician=self.clinician,
+            plan={'days': [{'exercise_ids': [self.exercise.id]}]},
+            preferences={},
+        )
+        self.client.force_authenticate(self.clinician_user)
+
+        response = self.client.post(
+            f'{self.endpoint}assign-draft/',
+            {
+                'draft': str(draft.id),
+                'stage': 'early_activation',
+                'exercises': [{
+                    'exercise': other_exercise.id,
+                    'sets': 1,
+                    'reps': 6,
+                    'days_per_week': 3,
+                }],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('exercises', response.data)
+        self.assertTrue(SlackPlanDraft.objects.filter(pk=draft.id).exists())
+        self.assertFalse(Prescription.objects.filter(
+            patient=self.patient,
+            exercise=other_exercise,
+        ).exists())

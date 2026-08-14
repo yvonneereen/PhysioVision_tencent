@@ -5,7 +5,7 @@ import {
   getMe,
   getPrescriptions,
   isLoggedIn,
-} from "./api.js?v=35";
+} from "./api.js?v=36";
 
 const profileCarePathStatus = document.getElementById("profileCarePathStatus");
 

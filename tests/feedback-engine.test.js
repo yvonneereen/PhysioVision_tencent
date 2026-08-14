@@ -347,6 +347,7 @@ assert.equal(
   assert.equal(result.trackingReady, false);
   assert.equal(result.progress, 0);
   assert.ok(result.missingMeasurements.length > 0);
+  assert.deepEqual(result.missingLandmarks, ["rightKnee"]);
 }
 
 {

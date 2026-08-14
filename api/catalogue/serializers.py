@@ -103,6 +103,47 @@ class PrescriptionSerializer(serializers.ModelSerializer):
         return attrs
 
 
+PROGRAMME_STAGE_CHOICES = [
+    ('early_activation', 'Stage 1 — Pain control and early activation'),
+    ('strength_control', 'Stage 2 — Strength and movement control'),
+    ('functional_return', 'Stage 3 — Functional and activity return'),
+]
+
+
+class DraftExerciseSelectionSerializer(serializers.Serializer):
+    exercise = serializers.CharField(max_length=60)
+    sets = serializers.IntegerField(min_value=1, max_value=10)
+    reps = serializers.IntegerField(min_value=1, max_value=50)
+    hold_seconds = serializers.IntegerField(
+        min_value=0,
+        max_value=300,
+        required=False,
+        allow_null=True,
+    )
+    days_per_week = serializers.IntegerField(min_value=1, max_value=7)
+
+
+class AssignDraftProgrammeSerializer(serializers.Serializer):
+    """The clinician-reviewed subset of one saved AI programme draft."""
+
+    draft = serializers.UUIDField()
+    message_id = serializers.UUIDField(required=False, allow_null=True)
+    stage = serializers.ChoiceField(choices=PROGRAMME_STAGE_CHOICES)
+    exercises = DraftExerciseSelectionSerializer(
+        many=True,
+        allow_empty=False,
+        max_length=12,
+    )
+
+    def validate_exercises(self, rows):
+        exercise_ids = [row['exercise'] for row in rows]
+        if len(exercise_ids) != len(set(exercise_ids)):
+            raise serializers.ValidationError(
+                'Each exercise can be included only once.'
+            )
+        return rows
+
+
 class CalibrationSerializer(serializers.ModelSerializer):
     exercise_name = serializers.CharField(source='exercise.name', read_only=True)
 

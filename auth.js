@@ -14,7 +14,7 @@ import {
   verifyLogin,
   verifyPasswordResetCode,
   warmApi,
-} from "./api.js?v=35";
+} from "./api.js?v=36";
 import { getRoleNavigationState } from "./role-ui.js?v=17";
 
 const shell        = document.getElementById("auth-modal");

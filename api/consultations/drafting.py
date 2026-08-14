@@ -1,6 +1,7 @@
 """AI-assisted consultation drafts built from authenticated patient records."""
 
 import json
+import re
 from collections import Counter
 
 from django.conf import settings
@@ -101,6 +102,13 @@ def build_consultation_facts(patient):
 
 def _normalize_draft(text):
     draft = ' '.join(str(text or '').split()).strip(' \t\r\n"“”')
+    draft = re.sub(
+        r'\s*Please review (?:these|my|the) recent PhysioVision records'
+        r'(?: when you are able)?[.!?]?\s*$',
+        '',
+        draft,
+        flags=re.IGNORECASE,
+    ).rstrip()
     if not draft:
         raise ConsultationDraftUnavailable('The provider returned an empty draft.')
     if len(draft) > 1000:
@@ -127,8 +135,11 @@ def generate_consultation_draft(patient, locale='en-SG'):
         'useful dated session evidence. The physiotherapist assigned the exercise '
         'programme, so do not describe an exercise or a stored wellness profile '
         'goal as the patient\'s goal. Do not add a broad overall movement-quality '
-        'label such as "stable" as filler. If records are sparse, simply say the '
-        'patient would like their recent PhysioVision records reviewed. Do not '
+        'label such as "stable" as filler. Do not add a generic request to review '
+        'recent PhysioVision records, including "Please review these recent '
+        'PhysioVision records when you are able." End after the last concrete '
+        'recorded concern or relevant detail. If records are sparse, ask to arrange '
+        'a consultation without inventing a reason. Do not '
         'diagnose, infer a cause, claim urgency, recommend treatment, change an '
         'exercise plan, or invent symptoms. Do not include a heading, bullets, '
         'quotation marks, or commentary. '

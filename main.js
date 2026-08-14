@@ -7,7 +7,7 @@ import {
   measureHandExerciseFrame,
   measurePoseExerciseFrame,
 } from "./exercise-tracking.js?v=2";
-import { FeedbackEngine, EXERCISES } from "./feedback/engine.js?v=51";
+import { FeedbackEngine, EXERCISES } from "./feedback/engine.js?v=52";
 import { POSES } from "./poses.js";
 import {
   calibrationFrameMatchesPhase,
@@ -40,7 +40,7 @@ import {
   respondEmergencyAlert,
   sendAgentMessage,
   updatePainCheckin,
-} from "./api.js?v=35";
+} from "./api.js?v=36";
 import { analysePatientTrend } from "./patient-dashboard-state.js?v=16";
 import { DRAFT_EXERCISES } from "./exercises/catalog.js?v=3";
 import { translateText } from "./i18n.js?v=40";
@@ -2001,7 +2001,7 @@ function queueSpokenMovementCue(state, cue, timestampMs) {
     spokenCoachingCandidate = null;
     return;
   }
-  if (!["adjust", "tracking", "position", "ready"].includes(state)) {
+  if (!["adjust", "tracking", "visibility", "position", "ready"].includes(state)) {
     spokenCoachingCandidate = null;
     return;
   }
@@ -3532,6 +3532,18 @@ function renderFrame() {
             processFallMonitoring(landmarks, frameTimestamp);
           }
         } else {
+          if (
+            !calibrationSession
+            && !pendingSetStartCheck
+            && !movementTrackingPausedForInstruction
+          ) {
+            // An absent pose is an unassessable movement frame. Feed it to the
+            // engine so phase confirmation pauses and an out-of-frame partial
+            // movement cannot be completed as a repetition after reappearing.
+            updateFeedbackPanel({}, frameTimestamp);
+          } else {
+            engine.update({}, frameTimestamp);
+          }
           const fallEvent = fallMonitor.notePoseUnavailable(frameTimestamp);
           combinedPoseHistory = [];
           updateCalibrationCapture(null, frameTimestamp);
@@ -3541,21 +3553,21 @@ function renderFrame() {
             clearHoldTimer(activeDose(engine.exercise).holdSeconds);
           }
           statusEl.textContent = fallEvent.type === "visibility_lost"
-            ? "I can’t see you — please return to the marked area"
-            : "Step back so your full body is visible";
+            ? "Movement paused — I can’t see you. Return to the marked area"
+            : "Movement paused — step back so your full body is visible";
           setFeedbackBanner(
-            "position",
+            "visibility",
             interruptedHold
-              ? "Hold reset — return to the stretch to restart"
-              : ""
+              ? "Pause your movement. Your hold was reset because the required joints were no longer visible. Reposition, then restart the hold."
+              : "Pause your movement. Step back until your full body and required joints are visible."
           );
           queueSpokenMovementCue(
-            "position",
+            "visibility",
             interruptedHold
-              ? "Your hold was reset because tracking was lost. Return to the stretch and keep your full body visible."
+              ? "Pause your movement. Your hold was reset because tracking was lost. Reposition until your full body is visible, then restart the hold."
               : fallEvent.type === "visibility_lost"
-                ? "I can’t see you. Please return to the marked area."
-                : "Step back and keep your full body visible.",
+                ? "Pause your movement. I can’t see you. Please return to the marked area."
+                : "Pause your movement. Step back and keep your full body and required joints visible.",
             frameTimestamp
           );
         }
@@ -3854,13 +3866,13 @@ function updateFeedbackPanel(angles, timestampMs) {
     bannerCue =
       "Final repetition: stand tall, stay fully visible, and hold still until it is counted.";
   } else if (fb.inHold && !fb.holdPositionMaintained) {
-    bannerState = fb.trackingReady ? "adjust" : "tracking";
-    bannerCue = "Hold reset — return to the target position to restart";
+    bannerState = fb.trackingReady ? "adjust" : "visibility";
+    bannerCue = fb.trackingReady
+      ? "Hold reset — return to the target position to restart"
+      : "Pause your movement. The hold has stopped. Reposition until the required joints are visible, then restart the hold.";
   } else if (!fb.trackingReady) {
-    bannerState = "tracking";
-    bannerCue = fb.inHold
-      ? "Hold reset — keep the required joints visible to restart"
-      : movementTrackingGuidance(fb);
+    bannerState = "visibility";
+    bannerCue = movementTrackingGuidance(fb);
   } else if (
     fb.exercise.id === "half-squats"
     && fb.repCount === 0
@@ -4096,6 +4108,12 @@ function friendlyMeasurement(key) {
 }
 
 function movementTrackingGuidance(feedback) {
+  const hiddenJoints = (feedback.missingLandmarks ?? [])
+    .slice(0, 4)
+    .map((key) => friendlyMeasurement(key).toLowerCase());
+  const hiddenJointMessage = hiddenJoints.length
+    ? `I cannot clearly see your ${joinGuidanceLabels(hiddenJoints)}. `
+    : "I cannot clearly see all of the joints needed to measure this movement. ";
   if (feedback.exercise.id === "half-squats") {
     const missing = (feedback.missingMeasurements ?? [])
       .slice(0, 2)
@@ -4104,7 +4122,9 @@ function movementTrackingGuidance(feedback) {
       ? `I cannot measure your ${missing.join(" and ")} angle${missing.length > 1 ? "s" : ""}. `
       : "I cannot measure a complete leg angle. ";
     return (
-      measurement
+      "Pause your movement. "
+      + hiddenJointMessage
+      + measurement
       + "Step farther back or turn slightly until one complete hip, knee, and "
       + "ankle line is visible. Keep the chair beside you, not in "
       + "front of the visible leg."
@@ -4114,8 +4134,21 @@ function movementTrackingGuidance(feedback) {
     .slice(0, 2)
     .map((key) => friendlyMeasurement(key).toLowerCase());
   return labels.length
-    ? `Reposition so I can see and measure your ${labels.join(" and ")}.`
-    : "Keep every required joint visible so I can guide you safely.";
+    ? (
+      `Pause your movement. ${hiddenJointMessage}`
+      + `Reposition so I can see and measure your ${labels.join(" and ")}. `
+      + "I will resume measuring when the required joints are visible."
+    )
+    : (
+      `Pause your movement. ${hiddenJointMessage}`
+      + "Reposition until the required joints are visible. I will resume measuring then."
+    );
+}
+
+function joinGuidanceLabels(labels) {
+  if (labels.length < 2) return labels[0] ?? "";
+  if (labels.length === 2) return labels.join(" and ");
+  return `${labels.slice(0, -1).join(", ")}, and ${labels.at(-1)}`;
 }
 
 function movementPhaseGuidance(feedback) {
@@ -4975,7 +5008,7 @@ function setFeedbackBanner(state, cue = "") {
   feedbackEl.classList.toggle("needs-adjustment", state === "adjust");
   feedbackEl.classList.toggle(
     "tracking-uncertain",
-    state === "tracking" || state === "position"
+    state === "tracking" || state === "visibility" || state === "position"
   );
 
   if (state === "adjust") {
@@ -4995,6 +5028,10 @@ function setFeedbackBanner(state, cue = "") {
     title.textContent = "Tracking uncertain";
     detail.textContent =
       cue || "Make sure your required joints are clearly visible";
+  } else if (state === "visibility") {
+    symbol.textContent = "↔";
+    title.textContent = "Movement paused — adjust your position";
+    detail.textContent = cue || "Reposition until every required joint is visible";
   } else if (state === "position") {
     symbol.textContent = "↔";
     title.textContent = "Let’s get you in frame";

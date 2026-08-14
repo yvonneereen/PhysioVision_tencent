@@ -127,6 +127,15 @@ class ClinicianAssistantWebsiteTests(APITestCase):
             is_active=True,
         ).exists())
 
+    def test_typed_plan_acceptance_requires_structured_editor(self):
+        response = self.ask("accept plan for Sarah")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["command"], "accept_plan")
+        self.assertFalse(response.data["changed"])
+        self.assertIn("editable programme card", response.data["reply"])
+        self.assertFalse(Prescription.objects.filter(patient=self.patient).exists())
+
     @patch("api.slack_bot.services.generate_patient_message", return_value="Draft encouragement")
     def test_draft_message_uses_scoped_patient(self, generate_message):
         response = self.ask("draft message for Sarah")
@@ -139,6 +148,7 @@ class ClinicianAssistantWebsiteTests(APITestCase):
     @patch("api.slack_bot.services.build_plan_draft")
     def test_plan_builder_routes_to_existing_service(self, build_plan, build_blocks):
         draft = SimpleNamespace(
+            id="91fd0e22-d00d-4db4-bbe8-c47bb0d76b93",
             patient=self.patient,
             plan={
                 "summary": "A gentle plan.",
@@ -163,6 +173,15 @@ class ClinicianAssistantWebsiteTests(APITestCase):
         self.assertTrue(response.data["changed"])
         self.assertIn("Draft programme", response.data["reply"])
         self.assertEqual(response.data["data"]["patient_name"], "Sarah Lee")
+        self.assertEqual(
+            response.data["data"]["patient_id"],
+            str(self.patient.id),
+        )
+        self.assertEqual(
+            response.data["data"]["draft_id"],
+            "91fd0e22-d00d-4db4-bbe8-c47bb0d76b93",
+        )
+        self.assertEqual(len(response.data["data"]["stages"]), 3)
         self.assertEqual(response.data["data"]["exercises"][0]["sets"], 2)
         build_plan.assert_called_once_with(
             self.clinician,
@@ -187,6 +206,7 @@ class ClinicianAssistantWebsiteTests(APITestCase):
             primary_clinician=self.clinician,
         )
         draft = SimpleNamespace(
+            id="2cab0724-8de0-4bdb-8016-2a2cf5dd303e",
             patient=numbered,
             plan={"days": [], "constraints": {"days_per_week": 3}},
             preferences={"days_per_week": 3, "dose": {}},

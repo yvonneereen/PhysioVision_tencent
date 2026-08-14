@@ -33,7 +33,7 @@ Actions
 AI programme builder
 • build a plan for [name] — draft a programme
 • revise [name] [change] — refine the draft
-• accept plan for [name] — create prescriptions from the draft
+• use the draft editor — choose the stage, activities and dose, then assign it
 • summary — whole-roster overview"""
 
 
@@ -88,6 +88,7 @@ def _general_name(text):
 
 def _plan_payload(draft):
     from api.catalogue.models import Exercise
+    from api.catalogue.serializers import PROGRAMME_STAGE_CHOICES
 
     plan = draft.plan
     dose = draft.preferences.get("dose", {})
@@ -113,6 +114,7 @@ def _plan_payload(draft):
             "name": exercise.name if exercise else exercise_id,
             "sets": prescribed_dose.get("sets", getattr(exercise, "default_sets", None)),
             "reps": prescribed_dose.get("reps", getattr(exercise, "default_reps", None)),
+            "hold_seconds": getattr(exercise, "default_hold_seconds", None),
             "days_per_week": days_per_week,
             "available": bool(exercise),
         })
@@ -121,10 +123,16 @@ def _plan_payload(draft):
         or draft.patient.user.email
     )
     return {
+        "draft_id": str(draft.id) if getattr(draft, "id", None) else None,
+        "patient_id": str(draft.patient.id),
         "patient_name": patient_name,
         "patient_first_name": draft.patient.user.first_name or patient_name,
         "clinical_context": draft.preferences.get("clinical_summary", ""),
         "summary": plan.get("summary", ""),
+        "stages": [
+            {"value": value, "label": label}
+            for value, label in PROGRAMME_STAGE_CHOICES
+        ],
         "exercises": rows,
     }
 
@@ -220,14 +228,14 @@ def dispatch_clinician_command(user, message):
         )
 
     if re.match(r"^accept\s+plan(?:\s|$)", text):
-        name = _name_after(text, r"accept\s+plan")
-        patient, created, error = services.accept_plan_draft(clinician, name or "")
-        if error:
-            return response(error, "accept_plan")
         return response(
-            f"Created {created} prescription(s) for {patient.user.first_name} from the draft.",
+            (
+                "Use the editable programme card above to choose the "
+                "rehabilitation stage, included activities and dosage. Then "
+                "select ‘Assign and send to patient’."
+            ),
             "accept_plan",
-            changed=bool(created),
+            changed=False,
         )
 
     if re.match(r"^(build|create|draft|generate)(?:\s+a)?\s+plan(?:\s|$)", text):

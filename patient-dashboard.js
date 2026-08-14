@@ -13,7 +13,7 @@ import {
   isLoggedIn,
   selectPatientPathway,
   sendCareMessage,
-} from "./api.js?v=35";
+} from "./api.js?v=36";
 import {
   analysePatientTrend,
   effectivePatientPathway,

@@ -121,6 +121,7 @@ export class FeedbackEngine {
         this.inHold && tracking.ready && detected === this.currentPhase,
       trackingReady: tracking.ready,
       missingMeasurements: tracking.missingMeasurements,
+      missingLandmarks: tracking.missingLandmarks,
       trackingSide: tracking.trackingSide,
       limitedTracking: tracking.limitedTracking,
       symmetryAvailable: tracking.symmetryAvailable,
@@ -210,6 +211,7 @@ export class FeedbackEngine {
       : [this.side];
     const candidates = candidateSides.map((side) => {
       const missingMeasurements = new Set();
+      const missingLandmarks = new Set();
       for (const key of requiredKeys) {
         const measurement = this._resolve(key, angles, side);
         if (
@@ -217,10 +219,17 @@ export class FeedbackEngine {
           || measurement.lowConfidence
           || !_hasUsableValue(measurement.value)
         ) {
-          missingMeasurements.add(this._resolvedKeyName(key, angles, side));
+          const resolvedKey = this._resolvedKeyName(key, angles, side);
+          missingMeasurements.add(resolvedKey);
+          const weakPoints = measurement?.weakPoints ?? [];
+          if (weakPoints.length) {
+            weakPoints.forEach((point) => missingLandmarks.add(point));
+          } else {
+            missingLandmarks.add(resolvedKey);
+          }
         }
       }
-      return { side, missingMeasurements };
+      return { side, missingMeasurements, missingLandmarks };
     });
     const candidate = candidates.find(({ missingMeasurements }) =>
       missingMeasurements.size === 0
@@ -253,6 +262,12 @@ export class FeedbackEngine {
             || !Number.isFinite(measurement.value)
           ) {
             candidate.missingMeasurements.add(key);
+            const weakPoints = measurement?.weakPoints ?? [];
+            if (weakPoints.length) {
+              weakPoints.forEach((point) => candidate.missingLandmarks.add(point));
+            } else {
+              candidate.missingLandmarks.add(key);
+            }
           }
         }
       }
@@ -263,6 +278,7 @@ export class FeedbackEngine {
     return {
       ready,
       missingMeasurements: [...candidate.missingMeasurements],
+      missingLandmarks: [...candidate.missingLandmarks],
       trackingSide: candidate.side,
       symmetryAvailable,
       limitedTracking: ready && (

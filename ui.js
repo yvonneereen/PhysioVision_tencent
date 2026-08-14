@@ -15,7 +15,7 @@ import {
   patchMe,
   postWellnessScreening,
   startEmergencyContactVerification,
-} from "./api.js?v=35";
+} from "./api.js?v=36";
 import { getLocale, translateText } from "./i18n.js?v=40";
 
 const GOAL_API_VALUES = Object.freeze({

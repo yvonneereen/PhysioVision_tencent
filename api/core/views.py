@@ -1302,7 +1302,7 @@ class AgentChatView(APIView):
             if 'data' in command_result:
                 response_data['data'] = command_result['data']
         if clinician_session is not None:
-            ClinicianAiMessage.objects.create(
+            assistant_message = ClinicianAiMessage.objects.create(
                 session=clinician_session,
                 role=ClinicianAiMessageRole.ASSISTANT,
                 body=reply,
@@ -1316,6 +1316,7 @@ class AgentChatView(APIView):
                     pk=clinician_session.pk,
                 )
             ).data
+            response_data['message_id'] = str(assistant_message.id)
         return Response(response_data)
 
 

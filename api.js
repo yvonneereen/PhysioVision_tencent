@@ -358,6 +358,10 @@ export async function createPrescription(prescription) {
   return request("POST", "/prescriptions/", prescription);
 }
 
+export async function assignAiDraftProgramme(programme) {
+  return request("POST", "/prescriptions/assign-draft/", programme);
+}
+
 // ── Consultations and trend alerts ───────────────────────────
 
 export async function getConsultations() {
