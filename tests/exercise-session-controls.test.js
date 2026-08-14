@@ -169,8 +169,57 @@ const activateGuideSource = functionSource(
 );
 assert.match(
   activateGuideSource,
-  /await ensureMovementModels\(\)/,
-  "the movement models should load lazily from the explicit camera action"
+  /await ensureMovementModels\(engine\.exercise\)/,
+  "only the current exercise's movement models should load from the explicit camera action"
+);
+const modelLoaderSource = functionSource(
+  "ensureMovementModels",
+  "syncPracticeAccess"
+);
+assert.match(
+  modelLoaderSource,
+  /const needsPose = trackingMode !== TRACKING_MODES\.HAND[\s\S]*?const needsHand = \[TRACKING_MODES\.HAND, TRACKING_MODES\.POSE_AND_HAND\][\s\S]*?if \(needsPose && !poseLandmarker\) loaders\.push\(createPoseLandmarker\(\)\)[\s\S]*?if \(needsHand && !handLandmarker\) loaders\.push\(createHandLandmarker\(\)\)/,
+  "pose and hand models should load independently according to the exercise tracking mode"
+);
+const poseModelSource = functionSource(
+  "createPoseLandmarker",
+  "createHandLandmarker"
+);
+assert.doesNotMatch(
+  poseModelSource,
+  /HandLandmarker\.createFromOptions/,
+  "a pose-only exercise must not initialize the hand model"
+);
+const handPreviewSource = functionSource(
+  "startHandPreview",
+  "stopHandPreview"
+);
+assert.match(
+  handPreviewSource,
+  /ensureMovementModels\(null, \{ handPreview: true \}\)/,
+  "the optional close-up hand check should request only the hand model"
+);
+const startCameraSource = functionSource("startCamera", "stopCamera");
+assert.match(
+  startCameraSource,
+  /width: \{ ideal: 640, max: 640 \}[\s\S]*?height: \{ ideal: 480, max: 480 \}[\s\S]*?frameRate: \{ ideal: 15, max: 20 \}/,
+  "camera capture should be bounded to a practical resolution and frame rate"
+);
+assert.match(
+  source,
+  /const CAMERA_INFERENCE_FPS = 15;[\s\S]*?const CAMERA_INFERENCE_INTERVAL_MS = 1000 \/ CAMERA_INFERENCE_FPS;/,
+  "movement inference should have an explicit 15 FPS processing budget"
+);
+const renderFrameSource = functionSource("renderFrame", "plannedSetCount");
+assert.match(
+  renderFrameSource,
+  /frameTimestamp - lastInferenceStamp >= CAMERA_INFERENCE_INTERVAL_MS[\s\S]*?video\.currentTime !== lastVideoTime && inferenceDue/,
+  "animation frames should skip MediaPipe inference until the processing interval is due"
+);
+assert.match(
+  activateGuideSource,
+  /resetCameraInferenceClock\(\)/,
+  "each new camera session should reset the throttled inference clock"
 );
 assert.match(
   source,

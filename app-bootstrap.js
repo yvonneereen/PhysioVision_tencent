@@ -13,7 +13,7 @@ function loadMovementApp() {
   if (!movementPromise) {
     movementPromise = Promise.all([
       import("./exercise-library.js?v=21"),
-      import("./main.js?v=156"),
+      import("./main.js?v=157"),
     ]).catch((error) => {
       movementPromise = null;
       throw error;

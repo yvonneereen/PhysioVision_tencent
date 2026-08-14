@@ -381,7 +381,9 @@ let practiceDecision = resolvePracticeAccess({
   activePrescriptionCount: activePrescriptions.size,
   prescriptionsLoaded,
 });
-let movementModelsPromise = null;
+let visionRuntimePromise = null;
+let poseModelPromise = null;
+let handModelPromise = null;
 const fallMonitor = new FallMonitor();
 let safetyCheckActive = false;
 let fallSafetyTimer = null;
@@ -1143,17 +1145,40 @@ const PRACTICE_GATE_COPY = Object.freeze({
   },
 });
 
-function ensureMovementModels() {
-  if (poseLandmarker) return Promise.resolve();
-  if (movementModelsPromise) return movementModelsPromise;
+async function ensureMovementModels(
+  exercise = engine.exercise,
+  { handPreview = false } = {},
+) {
+  const trackingMode = handPreview
+    ? TRACKING_MODES.HAND
+    : exercise?.trackingMode ?? TRACKING_MODES.POSE;
+  const needsPose = trackingMode !== TRACKING_MODES.HAND;
+  const needsHand = [TRACKING_MODES.HAND, TRACKING_MODES.POSE_AND_HAND]
+    .includes(trackingMode);
+  const loaders = [];
+  if (needsPose && !poseLandmarker) loaders.push(createPoseLandmarker());
+  if (needsHand && !handLandmarker) loaders.push(createHandLandmarker());
+  if (!loaders.length) return true;
 
-  statusEl.textContent = "Preparing movement guide…";
-  movementModelsPromise = createLandmarker().catch((error) => {
-    movementModelsPromise = null;
+  statusEl.textContent = needsHand
+    ? "Preparing the required movement models…"
+    : "Preparing the pose movement model…";
+  if (!needsHand && !handLandmarker) {
+    handModelStatus.textContent = "Loads only when needed";
+    handModelStatus.classList.remove("is-ready", "is-error");
+  }
+  try {
+    await Promise.all(loaders);
+  } catch (error) {
     statusEl.textContent = "Movement model unavailable — check your connection";
     console.error("Movement model initialization failed", error);
-  });
-  return movementModelsPromise;
+  }
+  const ready = (!needsPose || Boolean(poseLandmarker))
+    && (!needsHand || Boolean(handLandmarker));
+  if (ready) statusEl.textContent = "Movement guide ready";
+  toggleBtn.disabled = !ready;
+  renderPersonalization();
+  return ready;
 }
 
 function syncPracticeAccess() {
@@ -3120,43 +3145,69 @@ window.addEventListener("physiovision:auth-role", (event) => {
 
 // ── MediaPipe setup ───────────────────────────────────────────────────────────
 
-async function createLandmarker() {
-  const visionTasks = await import(
-    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14"
-  );
-  ({
-    PoseLandmarker,
-    HandLandmarker,
-    FilesetResolver,
-    DrawingUtils,
-  } = visionTasks);
-  drawingUtils = new DrawingUtils(ctx);
+async function loadVisionRuntime() {
+  if (visionRuntimePromise) return visionRuntimePromise;
+  visionRuntimePromise = (async () => {
+    const visionTasks = await import(
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14"
+    );
+    ({
+      PoseLandmarker,
+      HandLandmarker,
+      FilesetResolver,
+      DrawingUtils,
+    } = visionTasks);
+    if (!drawingUtils) drawingUtils = new DrawingUtils(ctx);
+    return FilesetResolver.forVisionTasks(
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+    );
+  })().catch((error) => {
+    visionRuntimePromise = null;
+    throw error;
+  });
+  return visionRuntimePromise;
+}
 
-  const vision = await FilesetResolver.forVisionTasks(
-    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
-  );
-  const poseOptions = {
-    baseOptions: {
-      modelAssetPath:
-        "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task",
-    },
-    runningMode: "VIDEO",
-    numPoses: 1,
-    minPoseDetectionConfidence: 0.5,
-    minPosePresenceConfidence: 0.5,
-    minTrackingConfidence: 0.5,
-  };
-  try {
-    poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
-      ...poseOptions,
-      baseOptions: { ...poseOptions.baseOptions, delegate: "GPU" },
-    });
-  } catch (gpuError) {
-    console.info("GPU pose tracking unavailable; using CPU", gpuError);
-    poseLandmarker = await PoseLandmarker.createFromOptions(vision, poseOptions);
-  }
+async function createPoseLandmarker() {
+  if (poseLandmarker) return poseLandmarker;
+  if (poseModelPromise) return poseModelPromise;
+  poseModelPromise = (async () => {
+    const vision = await loadVisionRuntime();
+    const poseOptions = {
+      baseOptions: {
+        modelAssetPath:
+          "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task",
+      },
+      runningMode: "VIDEO",
+      numPoses: 1,
+      minPoseDetectionConfidence: 0.5,
+      minPosePresenceConfidence: 0.5,
+      minTrackingConfidence: 0.5,
+    };
+    try {
+      poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+        ...poseOptions,
+        baseOptions: { ...poseOptions.baseOptions, delegate: "GPU" },
+      });
+    } catch (gpuError) {
+      console.info("GPU pose tracking unavailable; using CPU", gpuError);
+      poseLandmarker = await PoseLandmarker.createFromOptions(vision, poseOptions);
+    }
+    return poseLandmarker;
+  })().catch((error) => {
+    poseModelPromise = null;
+    throw error;
+  });
+  return poseModelPromise;
+}
 
-  try {
+async function createHandLandmarker() {
+  if (handLandmarker) return handLandmarker;
+  if (handModelPromise) return handModelPromise;
+  handModelStatus.textContent = "Loading required hand model…";
+  handModelStatus.classList.remove("is-ready", "is-error");
+  handModelPromise = (async () => {
+    const vision = await loadVisionRuntime();
     const handOptions = {
       baseOptions: {
         modelAssetPath:
@@ -3179,16 +3230,15 @@ async function createLandmarker() {
     }
     handModelStatus.textContent = "Ready";
     handModelStatus.classList.add("is-ready");
-    handTrackingToggle.disabled = false;
-  } catch (error) {
+    return handLandmarker;
+  })().catch((error) => {
+    handModelPromise = null;
     console.warn("Hand Landmarker could not be loaded", error);
     handModelStatus.textContent = "Unavailable";
     handModelStatus.classList.add("is-error");
-  }
-
-  statusEl.textContent = "Movement guide ready";
-  toggleBtn.disabled = false;
-  renderPersonalization();
+    throw error;
+  });
+  return handModelPromise;
 }
 
 // ── Camera ────────────────────────────────────────────────────────────────────
@@ -3196,8 +3246,9 @@ async function createLandmarker() {
 async function startCamera() {
   const stream = await navigator.mediaDevices.getUserMedia({
     video: {
-      width: { ideal: 640 },
-      height: { ideal: 480 },
+      width: { ideal: 640, max: 640 },
+      height: { ideal: 480, max: 480 },
+      frameRate: { ideal: 15, max: 20 },
       // "none" requests raw sensor output — prevents OS-level crop/pan (Center Stage)
       resizeMode: "none",
     },
@@ -3253,8 +3304,17 @@ let running = false;
 let rafId;
 let lastVideoTime = -1;
 let lastFrameStamp = performance.now();
+let lastInferenceStamp = -Infinity;
+const CAMERA_INFERENCE_FPS = 15;
+const CAMERA_INFERENCE_INTERVAL_MS = 1000 / CAMERA_INFERENCE_FPS;
 let handPreviewMode = false;
 let combinedPoseHistory = [];
+
+function resetCameraInferenceClock() {
+  lastVideoTime = -1;
+  lastInferenceStamp = -Infinity;
+  lastFrameStamp = performance.now();
+}
 
 function handMetric(name) {
   return handTrackingReadout?.querySelector(`[data-hand-metric="${name}"]`);
@@ -3411,9 +3471,12 @@ function renderFrame() {
     return;
   }
 
-  if (video.currentTime !== lastVideoTime) {
+  const frameTimestamp = performance.now();
+  const inferenceDue =
+    frameTimestamp - lastInferenceStamp >= CAMERA_INFERENCE_INTERVAL_MS;
+  if (video.currentTime !== lastVideoTime && inferenceDue) {
     lastVideoTime = video.currentTime;
-    const frameTimestamp = performance.now();
+    lastInferenceStamp = frameTimestamp;
 
     ctx.save();
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -3569,9 +3632,8 @@ function renderFrame() {
 
     ctx.restore();
 
-    const now = performance.now();
-    fpsEl.textContent = (1000 / (now - lastFrameStamp)).toFixed(0);
-    lastFrameStamp = now;
+    fpsEl.textContent = (1000 / (frameTimestamp - lastFrameStamp)).toFixed(0);
+    lastFrameStamp = frameTimestamp;
   }
 
   rafId = requestAnimationFrame(renderFrame);
@@ -5166,8 +5228,10 @@ async function activateCameraGuide({ announceInstruction = true } = {}) {
   stopRestResumeVoiceListening({ cancelListening: true });
   if (!(await ensureVoiceModeChosen())) return false;
   if (!hasPathwayAccess()) return false;
-  await ensureMovementModels();
-  if (!poseLandmarker) {
+  const trackingMode = engine.exercise.trackingMode ?? TRACKING_MODES.POSE;
+  const needsPose = trackingMode !== TRACKING_MODES.HAND;
+  await ensureMovementModels(engine.exercise);
+  if (needsPose && !poseLandmarker) {
     statusEl.textContent = "The movement-tracking model is unavailable";
     setFeedbackBanner(
       "tracking",
@@ -5190,7 +5254,7 @@ async function activateCameraGuide({ announceInstruction = true } = {}) {
     await startCamera();
     renderTrackingWarning(engine.exercise);
     running = true;
-    lastVideoTime = -1;
+    resetCameraInferenceClock();
     combinedPoseHistory = [];
     beginExerciseSession();
     resetSpokenCoaching();
@@ -5311,7 +5375,7 @@ function deactivateCameraGuide({
 async function startHandPreview() {
   if (!hasLivePracticeAccess()) return false;
   if (running) return false;
-  await ensureMovementModels();
+  await ensureMovementModels(null, { handPreview: true });
   if (!handLandmarker) {
     statusEl.textContent = "The hand-tracking model is unavailable";
     setFeedbackBanner(
@@ -5334,7 +5398,7 @@ async function startHandPreview() {
   try {
     await startCamera();
     running = true;
-    lastVideoTime = -1;
+    resetCameraInferenceClock();
     cameraStage?.classList.add("camera-active");
     handTrackingToggle.textContent = "Stop hand check";
     handTrackingToggle.disabled = false;
