@@ -43,7 +43,7 @@ import {
 } from "./api.js?v=36";
 import { analysePatientTrend } from "./patient-dashboard-state.js?v=16";
 import { DRAFT_EXERCISES } from "./exercises/catalog.js?v=3";
-import { getSpeechLocale, translateText } from "./i18n.js?v=46";
+import { getSpeechLocale, translateText } from "./i18n.js?v=47";
 import { preloadPreparedGuidanceSpeech } from "./guide-audio.js?v=5";
 import {
   isMovementRestRequest,
@@ -2399,7 +2399,7 @@ function beginExerciseCompletionConfirmation(feedback, completion) {
   cameraSessionHintEl.textContent = question;
 
   let questionStarted = false;
-  const askQuestion = () => {
+  const askQuestion = ({ questionAlreadySpoken = false } = {}) => {
     if (
       questionStarted
       || !exerciseCompletionConfirmationActive
@@ -2416,6 +2416,10 @@ function beginExerciseCompletionConfirmation(feedback, completion) {
       listeningStarted = true;
       listenForExerciseCompletionConfirmation(generation);
     };
+    if (questionAlreadySpoken) {
+      beginListening();
+      return;
+    }
     const spoken = speakMovementGuide(question, {
       key: `completion-confirmation:question:${feedback.exercise.id}`,
       interrupt: true,
@@ -2434,6 +2438,37 @@ function beginExerciseCompletionConfirmation(feedback, completion) {
   const finalCountAnnouncement = metric.isHold
     ? `${metric.goal} seconds complete.`
     : `Rep ${feedback.repCount}.`;
+  if (
+    !completion.nextExerciseId
+    && handsFreeVoiceEnabled
+    && voiceGuidance.canListen
+  ) {
+    // A one-exercise session uses one prepared clip for the final count,
+    // completion notice and hands-free finish question. This keeps the full
+    // presentation journey inside the free TTS request allowance without
+    // removing any information the user needs.
+    const combinedAnnouncement = localizedGuidanceParts([
+      finalCountAnnouncement,
+      completion.spokenMessage,
+      question,
+    ]);
+    const finishCombinedAnnouncement = () => {
+      spokenRepCount = Math.max(spokenRepCount, feedback.repCount);
+      askQuestion({ questionAlreadySpoken: true });
+    };
+    const spoken = speakMovementGuide(combinedAnnouncement, {
+      key: `completion:${feedback.exercise.id}:done-and-checkin`,
+      interrupt: true,
+      onEnd: finishCombinedAnnouncement,
+    });
+    if (!spoken) finishCombinedAnnouncement();
+    else {
+      window.setTimeout(() => {
+        if (!voiceGuidance.isSpeaking) finishCombinedAnnouncement();
+      }, 15000);
+    }
+    return;
+  }
   const finishCompletionAnnouncement = () => {
     spokenRepCount = Math.max(spokenRepCount, feedback.repCount);
     askQuestion();
@@ -6067,8 +6102,15 @@ function continueAfterPainCheckin(completed) {
   // The visible countdown begins now. Speech playback is supplementary and
   // can never hold camera setup in the three-second state.
   beginVisibleCountdown();
+  const heardPainLevel = Number.isInteger(completed.painLevel)
+    ? `I heard pain level ${completed.painLevel} out of 10.`
+    : "";
+  const cameraStartAnnouncement = localizedGuidanceParts([
+    heardPainLevel,
+    "Camera setup is starting now. Stay near your device.",
+  ]);
   speakMovementGuide(
-    "Pain confirmed. Stay near your device.",
+    cameraStartAnnouncement,
     {
       key: `camera-setup:countdown:${completed.context}`,
       interrupt: true,
@@ -7699,6 +7741,21 @@ function acceptPainLevel(level) {
     return;
   }
   painCheckinState.painLevel = level;
+  const canContinueWithoutSpokenConfirmation = Boolean(
+    handsFreeVoiceEnabled
+    && painCheckinState.context === "before"
+    && (painCheckinState.startAfter || painCheckinState.continuation)
+    && !painCheckinState.forceSafetyInterview
+    && !requiresPainSafetyInterview()
+  );
+  if (canContinueWithoutSpokenConfirmation) {
+    // The camera handoff repeats the recognized number in the same utterance,
+    // so a routine pre-exercise answer does not spend a second TTS request on
+    // a separate yes/no exchange. Concerning scores still require explicit
+    // confirmation before the safety interview begins.
+    finishPainCheckin();
+    return;
+  }
   beginPainConfirmation();
 }
 

@@ -26,18 +26,25 @@ def parse_args():
         default="",
         help="Prioritize one exercise without removing any other catalogue entries",
     )
+    parser.add_argument(
+        "--pack",
+        default="",
+        help="Generate only the named prepared-audio pack",
+    )
     parser.add_argument("--delay-seconds", type=float, default=21.0)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT)
     return parser.parse_args()
 
 
-def load_catalog(exercise=""):
+def load_catalog(exercise="", pack=""):
     command = [
         "node",
         str(PROJECT_ROOT / "scripts" / "export-guide-audio-catalog.mjs"),
     ]
     if exercise:
         command.extend(["--exercise", exercise])
+    if pack:
+        command.extend(["--pack", pack])
     result = subprocess.run(
         command,
         cwd=PROJECT_ROOT,
@@ -157,7 +164,7 @@ def main():
 
     model = os.environ.get("GEMINI_TTS_MODEL", "gemini-3.1-flash-tts-preview")
     voice = os.environ.get("GEMINI_TTS_VOICE", "Sulafat")
-    catalog = load_catalog(args.exercise.strip())
+    catalog = load_catalog(args.exercise.strip(), args.pack.strip())
     phrases = catalog["phrases"]
     all_phrases = catalog.get("all_phrases", phrases)
     output_directory = args.output_root / args.locale

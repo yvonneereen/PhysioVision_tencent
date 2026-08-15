@@ -27,6 +27,17 @@ const halfSquatCatalog = JSON.parse(execFileSync(
   ],
   { encoding: "utf8" },
 ));
+const halfSquatPresentationPack = JSON.parse(execFileSync(
+  process.execPath,
+  [
+    fileURLToPath(new URL("../scripts/export-guide-audio-catalog.mjs", import.meta.url)),
+    "--exercise",
+    "half-squats",
+    "--pack",
+    "half-squats-one-exercise",
+  ],
+  { encoding: "utf8" },
+));
 assert.equal(halfSquatCatalog.target_exercise, "half-squats");
 assert.match(halfSquatCatalog.phrases[0], /Camera repetition counting is active/);
 assert.deepEqual(
@@ -37,6 +48,24 @@ assert.deepEqual(
 assert.ok(
   halfSquatCatalog.all_phrases.some(phrase => phrase.startsWith("Calf Raises.")),
   "targeting half squats must preserve every other exercise in the master catalogue",
+);
+assert.equal(halfSquatPresentationPack.pack, "half-squats-one-exercise");
+assert.equal(
+  halfSquatPresentationPack.phrases.length,
+  19,
+  "the presentation pack should contain ten existing clips and exactly nine missing clips",
+);
+assert.match(
+  halfSquatPresentationPack.phrases[12],
+  /^Starting position confirmed\. Camera repetition counting is active/,
+);
+assert.equal(
+  halfSquatPresentationPack.phrases[14],
+  "Rep 10. You’re done with Half Squats. Today’s exercise session is done. Would you like me to finish this exercise and start your check-in? Say yes or no.",
+);
+assert.equal(
+  halfSquatPresentationPack.phrases.at(-1),
+  "Your session summary is ready. Review tracking validity, movement execution, pain response, and recovery before continuing.",
 );
 const firstPreparedBatch = catalog.phrases.slice(0, 26);
 for (const prompt of [

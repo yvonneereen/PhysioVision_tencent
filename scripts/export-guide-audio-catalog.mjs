@@ -189,13 +189,69 @@ for (const exercise of EXERCISES) {
   );
 }
 
+const HALF_SQUATS_ONE_EXERCISE_PACK = "half-squats-one-exercise";
+
+function halfSquatsOneExercisePresentationPhrases() {
+  const exercise = EXERCISES.find(item => item.id === "half-squats");
+  const start = startGuidance(exercise);
+  const target = targetGuidance(exercise);
+  const instructionParts = [
+    "Camera repetition counting is active now, including while I give this instruction.",
+    start,
+    target,
+    "Say Hey Guide for help, or Hey Guide, I need a rest.",
+  ];
+  const calibrationStartInstruction = exercise.calibration.startInstruction
+    ?? `Hold your ${exercise.calibration.startPhase.replaceAll("_", " ")} position with your full body visible.`;
+  return [
+    instructionParts.join(" "),
+    ...Array.from({ length: 9 }, (_, index) => `Rep ${index + 1}.`),
+    "I heard pain level 5 out of 10. Camera setup is starting now. Stay near your device.",
+    [
+      "Camera is ready. Now step back until your required joints are visible.",
+      "I will quickly confirm your starting position using your saved personal range.",
+      calibrationStartInstruction,
+      "Hold still after this instruction. I will measure automatically and tell you when to move.",
+    ].join(" "),
+    ["Starting position confirmed.", ...instructionParts].join(" "),
+    "Final repetition. Stand tall and hold still until I say the exercise is complete.",
+    (
+      "Rep 10. You’re done with Half Squats. Today’s exercise session is done. "
+      + "Would you like me to finish this exercise and start your check-in? Say yes or no."
+    ),
+    "You’ve finished the exercise. How is your pain now? Please give me a number from zero to ten.",
+    "Please confirm the pain levels shown on screen. Say yes or change.",
+    "Compared with before this exercise, do you feel better, about the same, worse, or are you not sure?",
+    "Your session summary is ready. Review tracking validity, movement execution, pain response, and recovery before continuing.",
+  ];
+}
+
+const presentationPacks = new Map([
+  [HALF_SQUATS_ONE_EXERCISE_PACK, halfSquatsOneExercisePresentationPhrases()],
+]);
+for (const packPhrases of presentationPacks.values()) {
+  packPhrases.forEach(add);
+}
+
 const requestedExercise = (() => {
   const index = process.argv.indexOf("--exercise");
   return index >= 0 ? String(process.argv[index + 1] ?? "").trim() : "";
 })();
+const requestedPack = (() => {
+  const index = process.argv.indexOf("--pack");
+  return index >= 0 ? String(process.argv[index + 1] ?? "").trim() : "";
+})();
 
 let selectedPhrases = phrases;
-if (requestedExercise) {
+if (requestedPack) {
+  if (!presentationPacks.has(requestedPack)) {
+    throw new Error(`Unknown prepared-audio pack: ${requestedPack}`);
+  }
+  selectedPhrases = [];
+  for (const phrase of presentationPacks.get(requestedPack)) {
+    appendUnique(selectedPhrases, phrase);
+  }
+} else if (requestedExercise) {
   if (!exercisePhrases.has(requestedExercise)) {
     throw new Error(`Unknown exercise id: ${requestedExercise}`);
   }
@@ -240,6 +296,7 @@ process.stdout.write(`${JSON.stringify({
   version: 2,
   locale: "en-SG",
   target_exercise: requestedExercise || null,
+  pack: requestedPack || null,
   phrases: selectedPhrases,
   all_phrases: phrases,
 })}\n`);

@@ -6,18 +6,23 @@ on:
     paths:
       - ".github/workflows/generate-guide-audio.yml"
       - "scripts/generate-guide-audio.py"
+      - "scripts/export-guide-audio-catalog.mjs"
   workflow_dispatch:
     inputs:
       max_clips:
         description: "Maximum new clips to generate in this run"
         required: true
-        # One run prepares the pain exchange plus Rep 1 through Rep 10, so the
-        # presentation path does not depend on live network generation.
-        default: "26"
+        # Nine missing clips complete the one-exercise Half Squats presentation
+        # pack. One daily request remains unused as a quota buffer.
+        default: "9"
       exercise_target:
         description: "Exercise to prioritize; leave blank for the full catalogue order"
         required: false
         default: "half-squats"
+      audio_pack:
+        description: "Prepared-audio pack; keep the default for the presentation"
+        required: false
+        default: "half-squats-one-exercise"
 
 permissions:
   contents: write
@@ -30,8 +35,9 @@ jobs:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.GEMINI_KEY }}
       GEMINI_TTS_MODEL: gemini-3.1-flash-tts-preview
       GEMINI_TTS_VOICE: Sulafat
-      GUIDE_AUDIO_LIMIT: ${{ inputs.max_clips || '26' }}
+      GUIDE_AUDIO_LIMIT: ${{ inputs.max_clips || '9' }}
       GUIDE_AUDIO_EXERCISE: ${{ inputs.exercise_target || 'half-squats' }}
+      GUIDE_AUDIO_PACK: ${{ inputs.audio_pack || 'half-squats-one-exercise' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -46,6 +52,7 @@ jobs:
         run: >-
           python scripts/generate-guide-audio.py
           --exercise "$GUIDE_AUDIO_EXERCISE"
+          --pack "$GUIDE_AUDIO_PACK"
           --limit "$GUIDE_AUDIO_LIMIT"
           --delay-seconds 21
       - name: Commit generated clips

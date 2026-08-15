@@ -552,13 +552,13 @@ assert.doesNotMatch(
 );
 assert.match(
   functionSource("beginExerciseCompletionConfirmation", "processPendingRepAnnouncements"),
-  /Would you like me to finish this exercise[\s\S]*?listenForExerciseCompletionConfirmation[\s\S]*?finalCountAnnouncement[\s\S]*?announceExerciseComplete[\s\S]*?completion\.spokenMessage[\s\S]*?onEnd: finishCompletionAnnouncement/,
-  "completion speech should reuse separate final-count and completion clips before listening"
+  /Would you like me to finish this exercise[\s\S]*?finalCountAnnouncement[\s\S]*?!completion\.nextExerciseId[\s\S]*?combinedAnnouncement[\s\S]*?completion\.spokenMessage[\s\S]*?question[\s\S]*?done-and-checkin/,
+  "a one-exercise session should combine its final count, completion notice, and hands-free question"
 );
 assert.match(
   functionSource("beginExerciseCompletionConfirmation", "processPendingRepAnnouncements"),
-  /finishCompletionAnnouncement[\s\S]*?spokenRepCount = Math\.max\(spokenRepCount, feedback\.repCount\)[\s\S]*?askQuestion\(\)/,
-  "the spoken-count state should include the final repetition before listening"
+  /finishCombinedAnnouncement[\s\S]*?spokenRepCount = Math\.max\(spokenRepCount, feedback\.repCount\)[\s\S]*?askQuestion\(\{ questionAlreadySpoken: true \}\)/,
+  "the combined completion clip should begin listening without repeating the question"
 );
 assert.match(
   functionSource("listenForExerciseCompletionConfirmation", "beginExerciseCompletionConfirmation"),
@@ -1156,12 +1156,7 @@ const acceptPainSource = functionSource(
 assert.match(
   acceptPainSource,
   /beginPainConfirmation\(\)/,
-  "choosing a pain level should open confirmation before continuing"
-);
-assert.doesNotMatch(
-  acceptPainSource,
-  /beginRecoveryQuestion|finishPainCheckin/,
-  "choosing a pain level must not automatically advance the check-in"
+  "manual, after-exercise, and safety-sensitive pain answers should still open confirmation"
 );
 
 const acceptConfirmationSource = functionSource(
@@ -1230,8 +1225,8 @@ assert.match(
 );
 assert.match(
   countdownSource,
-  /beginVisibleCountdown\(\);[\s\S]*?speakMovementGuide\([\s\S]*?Pain confirmed\. Stay near your device\.[\s\S]*?allowGeneratedSpeech:\s*true/,
-  "the countdown should start immediately while requesting the same Gemini voice without blocking it"
+  /beginVisibleCountdown\(\);[\s\S]*?I heard pain level \$\{completed\.painLevel\} out of 10\.[\s\S]*?Camera setup is starting now\. Stay near your device\.[\s\S]*?allowGeneratedSpeech:\s*true/,
+  "the countdown should start immediately while repeating the heard score in the same Gemini utterance"
 );
 assert.doesNotMatch(
   countdownSource,
@@ -1262,6 +1257,20 @@ assert.match(
   functionSource("spokenPainConfirmationQuestion", "isPainSafetyStage"),
   /context === "after"[\s\S]*?Please confirm the pain levels shown on screen\. Say yes or change\.[\s\S]*?painConfirmationQuestion\(level\)/,
   "after-exercise pain comparisons should use a fixed prepared spoken prompt while retaining exact numbers on screen"
+);
+const acceptPainLevelSource = functionSource(
+  "acceptPainLevel",
+  "beginPainConfirmation"
+);
+assert.match(
+  acceptPainLevelSource,
+  /handsFreeVoiceEnabled[\s\S]*?context === "before"[\s\S]*?startAfter \|\| painCheckinState\.continuation[\s\S]*?!requiresPainSafetyInterview\(\)[\s\S]*?finishPainCheckin\(\)/,
+  "a routine hands-free pre-exercise score should continue without spending another TTS request on yes/no confirmation"
+);
+assert.match(
+  acceptPainLevelSource,
+  /!painCheckinState\.forceSafetyInterview[\s\S]*?!requiresPainSafetyInterview\(\)/,
+  "concerning or forced-safety scores must not bypass the confirmation and safety flow"
 );
 const cancelCountdownSource = functionSource(
   "cancelCameraSetupCountdown",

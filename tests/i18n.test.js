@@ -26,7 +26,7 @@ assert.ok(
 );
 assert.deepEqual(
   [...new Set(i18nCacheVersions)],
-  ["46"],
+  ["47"],
   "all browser entry points must use one i18n URL so only one DOM observer is created"
 );
 
@@ -384,6 +384,14 @@ assert.equal(
 assert.equal(
   translateText("I heard that your pain is 7 out of 10. Is that correct?"),
   "我听到您的疼痛程度是10分中的7分。正确吗？"
+);
+assert.equal(
+  translateText("I heard pain level 5 out of 10."),
+  "我听到您的疼痛程度是10分中的5分。"
+);
+assert.equal(
+  translateText("Camera setup is starting now. Stay near your device."),
+  "摄像头设置现在开始。请留在设备附近。"
 );
 assert.equal(
   translateText(
