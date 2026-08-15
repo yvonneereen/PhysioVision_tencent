@@ -1,4 +1,5 @@
 import {
+  acceptCareInvitation,
   acceptConsultation,
   cancelConsultation,
   createConsultation,
@@ -26,8 +27,8 @@ import {
   walkingConfidencePlanNeedsRefresh,
 } from "./patient-dashboard-state.js?v=17";
 import { saveProfile } from "./personalization.js?v=13";
-import { getLocale, translateText } from "./i18n.js?v=44";
-import { voiceGuidance } from "./voice-guidance.js?v=51";
+import { getLocale, translateText } from "./i18n.js?v=46";
+import { voiceGuidance } from "./voice-guidance.js?v=53";
 import { EXERCISE_MAP } from "./exercises/registry.js?v=62";
 import {
   buildPlannedSessionKey,
@@ -58,6 +59,21 @@ const demoNotice = document.getElementById("patientDemoNotice");
 const dashboardSide = document.getElementById("patientDashboardSide");
 const pathwayModal = document.getElementById("patientPathwayModal");
 const pathwayStatus = document.getElementById("patientPathwayStatus");
+const pathwayInviteForm = document.getElementById(
+  "patientPathwayInviteForm",
+);
+const pathwayInviteCode = document.getElementById(
+  "patientPathwayInviteCode",
+);
+const pathwayInviteSubmit = document.getElementById(
+  "patientPathwayInviteSubmit",
+);
+const pathwayInviteStatus = document.getElementById(
+  "patientPathwayInviteStatus",
+);
+const pathwaySelfRefer = document.getElementById(
+  "patientPathwaySelfRefer",
+);
 const careAcceptedNotice = document.getElementById("patientCareAcceptedNotice");
 const careAcceptedMessage = document.getElementById("patientCareAcceptedMessage");
 const careAcceptedDismiss = document.getElementById("patientCareAcceptedDismiss");
@@ -1235,6 +1251,20 @@ function setPathwayButtonsDisabled(disabled) {
     .forEach((button) => { button.disabled = disabled; });
 }
 
+function showPathwayInviteEntry() {
+  pathwayInviteForm.hidden = false;
+  pathwayStatus.textContent = "";
+  pathwayModal
+    ?.querySelectorAll("[data-pathway-choice]")
+    .forEach((button) => {
+      const selected =
+        button.dataset.pathwayChoice === "physiotherapist";
+      button.classList.toggle("is-selected", selected);
+      button.setAttribute("aria-pressed", String(selected));
+    });
+  window.setTimeout(() => pathwayInviteCode?.focus(), 50);
+}
+
 async function finishPathwaySetup(profile, user = currentUser) {
   currentUser = { ...user, profile };
   const browserProfile = browserProfileFromApi(profile);
@@ -1684,35 +1714,95 @@ pathwayModal
     button.addEventListener("click", async () => {
       const pathway = button.dataset.pathwayChoice;
       if (pathway === "physiotherapist") {
-        const confirmed = window.confirm(
-          "Request physiotherapist-guided support? Your account will switch "
-          + "only after a physiotherapist accepts your request.",
-        );
-        if (!confirmed) return;
+        showPathwayInviteEntry();
+        return;
       }
 
+      pathwayInviteForm.hidden = true;
+      pathwayModal
+        ?.querySelectorAll("[data-pathway-choice]")
+        .forEach((choiceButton) => {
+          const selected = choiceButton === button;
+          choiceButton.classList.toggle("is-selected", selected);
+          choiceButton.setAttribute("aria-pressed", String(selected));
+        });
       setPathwayButtonsDisabled(true);
-      pathwayStatus.textContent = pathway === "physiotherapist"
-        ? "Sending your request…"
-        : "Saving your pathway…";
+      pathwayStatus.textContent = "Saving your pathway…";
       try {
         const profile = await selectPatientPathway(pathway);
-        if (pathway === "physiotherapist") {
-          pathwayStatus.textContent =
-            "Request received. Waiting for a physiotherapist to accept you.";
-        }
         await finishPathwaySetup(profile);
       } catch (error) {
         pathwayStatus.textContent =
-          error.message || (
-            pathway === "physiotherapist"
-              ? "Your request could not be sent. Please try again."
-              : "Your pathway could not be saved. Please try again."
-          );
+          error.message || "Your pathway could not be saved. Please try again.";
         setPathwayButtonsDisabled(false);
       }
     });
   });
+
+pathwayInviteForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const code = pathwayInviteCode.value.trim().toUpperCase();
+  pathwayInviteCode.value = code;
+
+  if (!/^[A-Z2-9]{8}$/.test(code)) {
+    pathwayInviteStatus.textContent = translateText(
+      "Enter the complete 8-character invitation code.",
+    );
+    pathwayInviteCode.focus();
+    return;
+  }
+
+  setPathwayButtonsDisabled(true);
+  pathwayInviteCode.disabled = true;
+  pathwayInviteSubmit.disabled = true;
+  pathwaySelfRefer.disabled = true;
+  pathwayInviteStatus.textContent = translateText("Checking invitation…");
+
+  try {
+    await acceptCareInvitation(code);
+    const refreshedUser = await getMe();
+    pathwayInviteStatus.textContent = translateText(
+      "Connected successfully. Your physiotherapist can now assign your programme.",
+    );
+    await finishPathwaySetup(refreshedUser.profile, refreshedUser);
+    pathwayInviteCode.value = "";
+  } catch (error) {
+    pathwayInviteStatus.textContent =
+      error.message || translateText("The invitation could not be accepted.");
+    setPathwayButtonsDisabled(false);
+    pathwayInviteCode.disabled = false;
+    pathwayInviteSubmit.disabled = false;
+    pathwaySelfRefer.disabled = false;
+    pathwayInviteCode.focus();
+  }
+});
+
+// A patient without a code can still explicitly request an available
+// physiotherapist. Merely choosing the clinician-guided option never sends
+// this triage request.
+pathwaySelfRefer?.addEventListener("click", async () => {
+  setPathwayButtonsDisabled(true);
+  pathwayInviteCode.disabled = true;
+  pathwayInviteSubmit.disabled = true;
+  pathwaySelfRefer.disabled = true;
+  pathwayInviteStatus.textContent = translateText(
+    "Adding you to the triage queue…",
+  );
+  try {
+    const profile = await selectPatientPathway("physiotherapist");
+    pathwayInviteStatus.textContent = translateText(
+      "Request received. A physiotherapist will pick up your case soon.",
+    );
+    await finishPathwaySetup(profile);
+  } catch (error) {
+    pathwayInviteStatus.textContent =
+      error.message || "Your request could not be sent. Please try again.";
+    setPathwayButtonsDisabled(false);
+    pathwayInviteCode.disabled = false;
+    pathwayInviteSubmit.disabled = false;
+    pathwaySelfRefer.disabled = false;
+  }
+});
 
 // A wellness patient can ask for physiotherapist support without losing their
 // current plan. The pathway changes only after a clinician accepts the request.

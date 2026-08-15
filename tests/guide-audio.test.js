@@ -150,6 +150,31 @@ const generated = await dynamicStore.getSpeech({
 assert.equal(generated.audio, "CQk=");
 assert.equal(generatedRequests, 1);
 
+let fullSessionRequests = 0;
+const fullSessionStore = new GuidanceAudioStore({
+  ...browserWindow,
+  caches: null,
+}, {
+  fetchImpl: async () => new Response("not found", { status: 404 }),
+  generateSpeech: async () => {
+    fullSessionRequests += 1;
+    return { audio: "BgY=", mime_type: "audio/wav" };
+  },
+});
+for (let repetition = 1; repetition <= 10; repetition += 1) {
+  const spokenCount = await fullSessionStore.getSpeech({
+    text: `Uncached session rep ${repetition}.`,
+    locale: "en-SG",
+    allowGeneration: true,
+  });
+  assert.equal(spokenCount?.provider, "live_gemini");
+}
+assert.equal(
+  fullSessionRequests,
+  10,
+  "one Gemini voice must remain available for all ten unique repetition announcements",
+);
+
 const reloadedStore = new GuidanceAudioStore(browserWindow, {
   fetchImpl: async () => new Response("not found", { status: 404 }),
   generateSpeech: async () => {
@@ -278,7 +303,7 @@ const limitedStore = new GuidanceAudioStore({
     return { audio: "AQ==", mime_type: "audio/wav" };
   },
 });
-for (let number = 1; number <= 9; number += 1) {
+for (let number = 1; number <= 65; number += 1) {
   await limitedStore.getSpeech({
     text: `Uncached live answer ${number}`,
     locale: "en-SG",
@@ -287,7 +312,7 @@ for (let number = 1; number <= 9; number += 1) {
 }
 assert.equal(
   limitedGenerationRequests,
-  8,
+  64,
   "one page session must not generate unlimited live voice requests",
 );
 

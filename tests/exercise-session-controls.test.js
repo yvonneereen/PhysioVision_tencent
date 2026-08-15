@@ -402,8 +402,8 @@ assert.match(
 );
 assert.match(
   functionSource("speakMovementGuide", "localizedGuidanceParts"),
-  /allowGeneratedSpeech = false[\s\S]*?cacheScope = "generic"/,
-  "deterministic movement guidance must not make a live Gemini TTS request"
+  /allowGeneratedSpeech = true[\s\S]*?cacheScope = "generic"[\s\S]*?preferPrepared: true[\s\S]*?textOnlyOnUnavailable: true/,
+  "movement guidance should keep one Gemini voice and use text instead of browser speech when unavailable"
 );
 assert.match(
   functionSource("speakMovementAiMessage", "captureMovementAiQuestion"),
@@ -774,8 +774,8 @@ const movementGuideSpeechSource = functionSource(
 );
 assert.match(
   movementGuideSpeechSource,
-  /preferPrepared:\s*true[\s\S]*?allowGeneratedSpeech[\s\S]*?textOnlyOnUnavailable:\s*true[\s\S]*?voiceGroup:\s*MOVEMENT_GUIDE_VOICE_GROUP[\s\S]*?volume:\s*MOVEMENT_GUIDE_VOLUME/,
-  "live guidance should prefer prepared one-voice audio and avoid a browser-voice switch when unavailable"
+  /allowGeneratedSpeech\s*=\s*true[\s\S]*?preferPrepared:\s*true[\s\S]*?allowGeneratedSpeech[\s\S]*?textOnlyOnUnavailable:\s*true[\s\S]*?voiceGroup:\s*MOVEMENT_GUIDE_VOICE_GROUP[\s\S]*?volume:\s*MOVEMENT_GUIDE_VOLUME/,
+  "live guidance should use prepared, cached, or live Gemini audio without switching to a browser voice"
 );
 assert.match(
   functionSource("speakCameraCoaching", "exerciseSpokenInstruction"),
@@ -784,8 +784,8 @@ assert.match(
 );
 assert.match(
   source,
-  /function speakPainPrompt[\s\S]*?speakMovementGuide\(question[\s\S]*?voiceGroup:\s*PAIN_PROMPT_VOICE_GROUP[\s\S]*?allowGeneratedSpeech:\s*false[\s\S]*?rate:[\s\S]*?pitch:/,
-  "pain prompts should retain one prepared voice without waiting for live TTS"
+  /function speakPainPrompt[\s\S]*?speakMovementGuide\(question[\s\S]*?voiceGroup:\s*PAIN_PROMPT_VOICE_GROUP[\s\S]*?allowGeneratedSpeech:\s*true[\s\S]*?rate:[\s\S]*?pitch:/,
+  "pain prompts should retain the same Gemini voice when prepared audio is unavailable"
 );
 
 const calibrationFlowStart = source.indexOf(
@@ -1230,8 +1230,8 @@ assert.match(
 );
 assert.match(
   countdownSource,
-  /beginVisibleCountdown\(\);[\s\S]*?speakMovementGuide\([\s\S]*?Pain confirmed\. Stay near your device\.[\s\S]*?allowGeneratedSpeech:\s*false/,
-  "the countdown should start immediately and must not wait for live TTS"
+  /beginVisibleCountdown\(\);[\s\S]*?speakMovementGuide\([\s\S]*?Pain confirmed\. Stay near your device\.[\s\S]*?allowGeneratedSpeech:\s*true/,
+  "the countdown should start immediately while requesting the same Gemini voice without blocking it"
 );
 assert.doesNotMatch(
   countdownSource,

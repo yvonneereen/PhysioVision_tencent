@@ -5,7 +5,10 @@ const GENERATED_GENERIC_AUDIO_CACHE =
   "physiovision-generated-guide-audio-generic-v2";
 const LEGACY_GENERATED_AUDIO_CACHE = "physiovision-generated-guide-audio-v1";
 const GENERATED_AUDIO_CACHE_LIMIT = 96;
-const GENERATED_AUDIO_SESSION_LIMIT = 8;
+// The backend remains the authoritative hourly throttle. This client-side cap
+// only prevents runaway loops while allowing a complete exercise session,
+// including ten distinct repetition announcements, to keep one Gemini voice.
+const GENERATED_AUDIO_SESSION_LIMIT = 64;
 const PREPARED_AUDIO_FETCH_TIMEOUT_MS = 2000;
 const GENERATED_AUDIO_REQUEST_TIMEOUT_MS = 8000;
 

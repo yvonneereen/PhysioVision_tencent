@@ -13,6 +13,11 @@ assert.match(
 );
 assert.match(
   markup,
+  /I already have a physiotherapist[\s\S]*?id="patientPathwayInviteForm"[\s\S]*?id="patientPathwayInviteCode"[\s\S]*?id="patientPathwayInviteSubmit"/,
+  "initial patient setup should collect the physiotherapist invitation code",
+);
+assert.match(
+  markup,
   /Invite a patient[\s\S]*?id="createCareInvite"[\s\S]*?Generate invitation code/,
   "the clinician overview should retain direct patient invitations",
 );
@@ -23,8 +28,18 @@ assert.match(
 );
 assert.match(
   dashboard,
-  /selectPatientPathway\(pathway\)[\s\S]*?Waiting for a physiotherapist to accept you/,
-  "choosing physiotherapist support should send a request",
+  /if \(pathway === "physiotherapist"\) \{[\s\S]*?showPathwayInviteEntry\(\);[\s\S]*?return;/,
+  "choosing an existing physiotherapist should reveal code entry without sending a request",
+);
+assert.match(
+  dashboard,
+  /pathwayInviteForm\?\.addEventListener\("submit"[\s\S]*?acceptCareInvitation\(code\)[\s\S]*?getMe\(\)[\s\S]*?finishPathwaySetup/,
+  "submitting the invitation code should link the patient before opening their home",
+);
+assert.match(
+  dashboard,
+  /pathwaySelfRefer\?\.addEventListener\("click"[\s\S]*?selectPatientPathway\("physiotherapist"\)/,
+  "triage should remain a separate explicit action for patients without a code",
 );
 assert.match(
   dashboard,

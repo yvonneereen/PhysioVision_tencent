@@ -43,8 +43,8 @@ import {
 } from "./api.js?v=36";
 import { analysePatientTrend } from "./patient-dashboard-state.js?v=16";
 import { DRAFT_EXERCISES } from "./exercises/catalog.js?v=3";
-import { getSpeechLocale, translateText } from "./i18n.js?v=44";
-import { preloadPreparedGuidanceSpeech } from "./guide-audio.js?v=3";
+import { getSpeechLocale, translateText } from "./i18n.js?v=46";
+import { preloadPreparedGuidanceSpeech } from "./guide-audio.js?v=4";
 import {
   isMovementRestRequest,
   isMovementResumeRequest,
@@ -57,7 +57,7 @@ import {
   isSafariBrowser,
   readMicrophonePermissionState,
   voiceGuidance,
-} from "./voice-guidance.js?v=51";
+} from "./voice-guidance.js?v=53";
 import {
   PRACTICE_VIEWS,
   acceptedWellnessPlan,
@@ -1407,7 +1407,7 @@ function speakMovementGuide(message, options = {}) {
   const {
     rate = MOVEMENT_GUIDE_RATE,
     pitch = MOVEMENT_GUIDE_PITCH,
-    allowGeneratedSpeech = false,
+    allowGeneratedSpeech = true,
     cacheScope = "generic",
     onUnavailable = () => setMovementAiStatus(
       "error",
@@ -1417,9 +1417,9 @@ function speakMovementGuide(message, options = {}) {
   } = options;
   return voiceGuidance.speak(message, {
     ...speechOptions,
-    // Deterministic movement guidance must never spend a live Gemini request.
-    // It is spoken only from committed assets or an existing generic device
-    // cache. Only an unpredictable Hey Guide answer opts into generation.
+    // Keep the guide on one Gemini voice: use prepared audio first, reuse a
+    // Gemini clip cached on this device second, and generate it live only when
+    // neither exists. Never switch the movement guide to a browser voice.
     preferPrepared: true,
     allowGeneratedSpeech,
     cacheScope,
@@ -1467,6 +1467,7 @@ const GUIDE_AUDIO_SOURCE_LABELS = Object.freeze({
   device_audio_cache: "Device cache",
   live_gemini: "Live Gemini",
   gemini_tts: "Live Gemini",
+  browser_speech: "Device voice",
   text_only: "Text only",
 });
 
@@ -6071,7 +6072,7 @@ function continueAfterPainCheckin(completed) {
     {
       key: `camera-setup:countdown:${completed.context}`,
       interrupt: true,
-      allowGeneratedSpeech: false,
+      allowGeneratedSpeech: true,
       voiceGroup: PAIN_PROMPT_VOICE_GROUP,
       rate: PAIN_PROMPT_RATE,
       pitch: PAIN_PROMPT_PITCH,
@@ -6252,10 +6253,9 @@ function speakPainPrompt(
   const spoken = speakMovementGuide(question, {
     key,
     interrupt: true,
-    // Safety questions must begin without waiting for a network voice request.
-    // Keep the initial question and every follow-up on the same exact voice.
+    // Keep the initial question and every follow-up on the same Gemini voice.
     voiceGroup: PAIN_PROMPT_VOICE_GROUP,
-    allowGeneratedSpeech: false,
+    allowGeneratedSpeech: true,
     rate: Number.isFinite(rate) ? rate : PAIN_PROMPT_RATE,
     pitch: Number.isFinite(pitch) ? pitch : PAIN_PROMPT_PITCH,
     onUnavailable: () => {

@@ -1,8 +1,8 @@
 import {
   getSpeechLocale,
   translateText,
-} from "./i18n.js?v=44";
-import { getCachedOrGeneratedGuidanceSpeech } from "./guide-audio.js?v=3";
+} from "./i18n.js?v=46";
+import { getCachedOrGeneratedGuidanceSpeech } from "./guide-audio.js?v=4";
 
 const VOICE_PREFERENCE_KEY = "physiovision.voice.enabled.v1";
 const VOICE_RATE_PREFERENCE_KEY = "physiovision.voice.rate.v1";
@@ -1526,6 +1526,7 @@ export class VoiceGuidance {
         onEnd?.();
         return;
       }
+      this.reportGuidanceAudioSource("browser_speech", cacheScope);
       this.speakBrowser(message, {
         onEnd,
         rate,

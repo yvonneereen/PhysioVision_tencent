@@ -8,7 +8,7 @@ import {
   getPrescriptions,
   isLoggedIn,
 } from "./api.js?v=36";
-import { translateText } from "./i18n.js?v=44";
+import { translateText } from "./i18n.js?v=46";
 import { saveProfile } from "./personalization.js?v=14";
 
 const profileCarePathStatus = document.getElementById("profileCarePathStatus");
