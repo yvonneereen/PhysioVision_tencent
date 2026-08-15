@@ -16,7 +16,7 @@ import {
   warmApi,
 } from "./api.js?v=36";
 import { getRoleNavigationState } from "./role-ui.js?v=17";
-import { clearPersonalGuidanceSpeechCache } from "./guide-audio.js?v=4";
+import { clearPersonalGuidanceSpeechCache } from "./guide-audio.js?v=5";
 
 const shell        = document.getElementById("auth-modal");
 const loginForm    = document.getElementById("loginForm");

@@ -78,16 +78,51 @@ def generate_audio(client, transcript, *, locale, model, voice):
         "Do not add, remove, paraphrase or explain any words.\n\n"
         f"Transcript: {transcript}"
     )
-    interaction = client.interactions.create(
-        model=model,
-        input=prompt,
-        response_format={"type": "audio"},
-        generation_config={"speech_config": [{"voice": voice}]},
-    )
-    encoded = getattr(getattr(interaction, "output_audio", None), "data", None)
-    if not encoded:
-        raise RuntimeError("Gemini returned no audio")
-    return pcm_to_wav(base64.b64decode(encoded, validate=True))
+    from google.genai import types
+
+    try:
+        response = client.models.generate_content(
+            model=model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_modalities=["AUDIO"],
+                speech_config=types.SpeechConfig(
+                    voice_config=types.VoiceConfig(
+                        prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                            voice_name=voice,
+                        ),
+                    ),
+                ),
+            ),
+        )
+        pcm_audio = response.candidates[0].content.parts[0].inline_data.data
+        if not pcm_audio:
+            raise RuntimeError("GenerateContent returned no audio")
+        if isinstance(pcm_audio, str):
+            pcm_audio = base64.b64decode(pcm_audio, validate=True)
+    except Exception as generate_content_error:
+        try:
+            interaction = client.interactions.create(
+                model=model,
+                input=prompt,
+                response_format={"type": "audio"},
+                generation_config={"speech_config": [{"voice": voice}]},
+            )
+            encoded = getattr(
+                getattr(interaction, "output_audio", None),
+                "data",
+                None,
+            )
+            if not encoded:
+                raise RuntimeError("Interactions returned no audio")
+            pcm_audio = base64.b64decode(encoded, validate=True)
+        except Exception as interactions_error:
+            raise RuntimeError(
+                "Both Gemini speech routes failed: "
+                f"GenerateContent={type(generate_content_error).__name__}; "
+                f"Interactions={type(interactions_error).__name__}"
+            ) from interactions_error
+    return pcm_to_wav(bytes(pcm_audio))
 
 
 def write_manifest(output_directory, phrases, locale, voice):
@@ -147,7 +182,8 @@ def main():
             )
         except Exception as exc:
             print(
-                f"Stopped after {generated} clip(s): {type(exc).__name__}. "
+                f"Stopped after {generated} clip(s): "
+                f"{type(exc).__name__}: {exc}. "
                 "Completed clips will still be saved."
             )
             break
@@ -167,6 +203,10 @@ def main():
         f"Manifest contains {available} of {len(all_phrases)} prepared clips; "
         f"{len(all_phrases) - available} remain."
     )
+    if generated == 0 and selected:
+        raise SystemExit(
+            "No Gemini audio was generated; refusing to report a successful run."
+        )
 
 
 if __name__ == "__main__":

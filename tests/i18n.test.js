@@ -226,7 +226,7 @@ const voiceCacheVersions = voiceConsumerSources.flatMap((source) =>
 );
 assert.deepEqual(
   [...new Set(voiceCacheVersions)],
-  ["53"],
+  ["54"],
   "all voice consumers must share one voice-guidance module instance"
 );
 

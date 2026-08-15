@@ -29,6 +29,57 @@ def _pcm_to_wav(pcm_audio):
     return output.getvalue()
 
 
+def _generate_content_pcm(client, transcript, model, voice):
+    """Use the established GenerateContent TTS route with one fixed voice."""
+    from google.genai import types
+
+    response = client.models.generate_content(
+        model=model,
+        contents=transcript,
+        config=types.GenerateContentConfig(
+            response_modalities=['AUDIO'],
+            speech_config=types.SpeechConfig(
+                voice_config=types.VoiceConfig(
+                    prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                        voice_name=voice,
+                    ),
+                ),
+            ),
+        ),
+    )
+    try:
+        audio_data = response.candidates[0].content.parts[0].inline_data.data
+    except (AttributeError, IndexError, TypeError):
+        audio_data = None
+    if not audio_data:
+        raise GuidanceSpeechUnavailable('GenerateContent returned no audio.')
+    if isinstance(audio_data, str):
+        return base64.b64decode(audio_data, validate=True)
+    return bytes(audio_data)
+
+
+def _interactions_pcm(client, transcript, model, voice):
+    """Retain the newer Interactions route as a same-model fallback."""
+    interaction = client.interactions.create(
+        model=model,
+        input=transcript,
+        response_format={'type': 'audio'},
+        generation_config={
+            'speech_config': [
+                {'voice': voice},
+            ],
+        },
+    )
+    audio_data = getattr(
+        getattr(interaction, 'output_audio', None),
+        'data',
+        None,
+    )
+    if not audio_data:
+        raise GuidanceSpeechUnavailable('Interactions returned no audio.')
+    return base64.b64decode(audio_data, validate=True)
+
+
 def generate_guidance_speech(text, locale='en-SG'):
     """Return base64 WAV audio that recites ``text`` exactly.
 
@@ -56,20 +107,25 @@ def generate_guidance_speech(text, locale='en-SG'):
         from google import genai
 
         client = genai.Client(api_key=settings.GEMINI_API_KEY)
-        interaction = client.interactions.create(
-            model=settings.GEMINI_TTS_MODEL,
-            input=delivery_instruction,
-            response_format={'type': 'audio'},
-            generation_config={
-                'speech_config': [
-                    {'voice': settings.GEMINI_TTS_VOICE},
-                ],
-            },
-        )
-        audio_data = getattr(getattr(interaction, 'output_audio', None), 'data', None)
-        if not audio_data:
-            raise GuidanceSpeechUnavailable('Speech provider returned no audio.')
-        pcm_audio = base64.b64decode(audio_data, validate=True)
+        try:
+            pcm_audio = _generate_content_pcm(
+                client,
+                delivery_instruction,
+                settings.GEMINI_TTS_MODEL,
+                settings.GEMINI_TTS_VOICE,
+            )
+        except Exception as generate_content_error:
+            try:
+                pcm_audio = _interactions_pcm(
+                    client,
+                    delivery_instruction,
+                    settings.GEMINI_TTS_MODEL,
+                    settings.GEMINI_TTS_VOICE,
+                )
+            except Exception as interactions_error:
+                raise GuidanceSpeechUnavailable(
+                    'Both Gemini speech routes failed.'
+                ) from interactions_error
         wav_audio = _pcm_to_wav(pcm_audio)
     except GuidanceSpeechUnavailable:
         raise

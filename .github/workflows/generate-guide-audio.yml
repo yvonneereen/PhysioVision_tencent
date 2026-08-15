@@ -1,12 +1,19 @@
 name: Generate movement guide audio
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/generate-guide-audio.yml"
+      - "scripts/generate-guide-audio.py"
   workflow_dispatch:
     inputs:
       max_clips:
         description: "Maximum new clips to generate in this run"
         required: true
-        default: "10"
+        # One run prepares the pain exchange plus Rep 1 through Rep 10, so the
+        # presentation path does not depend on live network generation.
+        default: "26"
       exercise_target:
         description: "Exercise to prioritize; leave blank for the full catalogue order"
         required: false
@@ -23,8 +30,8 @@ jobs:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.GEMINI_KEY }}
       GEMINI_TTS_MODEL: gemini-3.1-flash-tts-preview
       GEMINI_TTS_VOICE: Sulafat
-      GUIDE_AUDIO_LIMIT: ${{ inputs.max_clips }}
-      GUIDE_AUDIO_EXERCISE: ${{ inputs.exercise_target }}
+      GUIDE_AUDIO_LIMIT: ${{ inputs.max_clips || '26' }}
+      GUIDE_AUDIO_EXERCISE: ${{ inputs.exercise_target || 'half-squats' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

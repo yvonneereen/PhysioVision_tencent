@@ -10,7 +10,9 @@ const GENERATED_AUDIO_CACHE_LIMIT = 96;
 // including ten distinct repetition announcements, to keep one Gemini voice.
 const GENERATED_AUDIO_SESSION_LIMIT = 64;
 const PREPARED_AUDIO_FETCH_TIMEOUT_MS = 2000;
-const GENERATED_AUDIO_REQUEST_TIMEOUT_MS = 8000;
+// Render may need to wake before Gemini creates the first uncached clip. Eight
+// seconds caused valid Sulafat requests to be abandoned before audio arrived.
+const GENERATED_AUDIO_REQUEST_TIMEOUT_MS = 30000;
 
 export function normalizeGuidanceTranscript(text) {
   return String(text ?? "").replace(/\s+/g, " ").trim();

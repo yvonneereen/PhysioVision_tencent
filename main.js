@@ -44,7 +44,7 @@ import {
 import { analysePatientTrend } from "./patient-dashboard-state.js?v=16";
 import { DRAFT_EXERCISES } from "./exercises/catalog.js?v=3";
 import { getSpeechLocale, translateText } from "./i18n.js?v=46";
-import { preloadPreparedGuidanceSpeech } from "./guide-audio.js?v=4";
+import { preloadPreparedGuidanceSpeech } from "./guide-audio.js?v=5";
 import {
   isMovementRestRequest,
   isMovementResumeRequest,
@@ -57,7 +57,7 @@ import {
   isSafariBrowser,
   readMicrophonePermissionState,
   voiceGuidance,
-} from "./voice-guidance.js?v=53";
+} from "./voice-guidance.js?v=54";
 import {
   PRACTICE_VIEWS,
   acceptedWellnessPlan,

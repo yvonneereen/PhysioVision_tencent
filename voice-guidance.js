@@ -2,7 +2,7 @@ import {
   getSpeechLocale,
   translateText,
 } from "./i18n.js?v=46";
-import { getCachedOrGeneratedGuidanceSpeech } from "./guide-audio.js?v=4";
+import { getCachedOrGeneratedGuidanceSpeech } from "./guide-audio.js?v=5";
 
 const VOICE_PREFERENCE_KEY = "physiovision.voice.enabled.v1";
 const VOICE_RATE_PREFERENCE_KEY = "physiovision.voice.rate.v1";
