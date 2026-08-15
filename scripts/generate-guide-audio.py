@@ -31,7 +31,7 @@ def parse_args():
         default="",
         help="Generate only the named prepared-audio pack",
     )
-    parser.add_argument("--delay-seconds", type=float, default=21.0)
+    parser.add_argument("--delay-seconds", type=float, default=65.0)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT)
     return parser.parse_args()
 
@@ -68,6 +68,22 @@ def pcm_to_wav(pcm_audio):
         wav_file.setframerate(24000)
         wav_file.writeframes(pcm_audio)
     return output.getvalue()
+
+
+def is_rate_limit_error(error):
+    """Return True when another Gemini request would only spend more quota."""
+    status_code = getattr(error, "status_code", None)
+    if status_code is None:
+        status_code = getattr(error, "code", None)
+    if status_code == 429 or str(status_code) == "429":
+        return True
+    detail = str(error).lower()
+    return any(marker in detail for marker in (
+        "429",
+        "resource_exhausted",
+        "rate limit",
+        "quota exceeded",
+    ))
 
 
 def generate_audio(client, transcript, *, locale, model, voice):
@@ -108,6 +124,15 @@ def generate_audio(client, transcript, *, locale, model, voice):
         if isinstance(pcm_audio, str):
             pcm_audio = base64.b64decode(pcm_audio, validate=True)
     except Exception as generate_content_error:
+        # A second API route cannot bypass a project-level RPM/RPD limit. Do
+        # not spend another request when the primary route is already telling
+        # us to wait; keep every completed WAV and let a later run resume only
+        # the files that are still absent.
+        if is_rate_limit_error(generate_content_error):
+            raise RuntimeError(
+                "Gemini TTS rate limit reached; stopped without making a "
+                "fallback request"
+            ) from generate_content_error
         try:
             interaction = client.interactions.create(
                 model=model,

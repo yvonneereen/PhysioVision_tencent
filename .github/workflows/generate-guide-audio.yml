@@ -12,9 +12,9 @@ on:
       max_clips:
         description: "Maximum new clips to generate in this run"
         required: true
-        # Nine missing clips complete the one-exercise Half Squats presentation
-        # pack. One daily request remains unused as a quota buffer.
-        default: "9"
+        # The first quota-safe run saved three clips. Six clips now remain in
+        # the one-exercise Half Squats presentation pack.
+        default: "6"
       exercise_target:
         description: "Exercise to prioritize; leave blank for the full catalogue order"
         required: false
@@ -35,7 +35,7 @@ jobs:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.GEMINI_KEY }}
       GEMINI_TTS_MODEL: gemini-3.1-flash-tts-preview
       GEMINI_TTS_VOICE: Sulafat
-      GUIDE_AUDIO_LIMIT: ${{ inputs.max_clips || '9' }}
+      GUIDE_AUDIO_LIMIT: ${{ inputs.max_clips || '6' }}
       GUIDE_AUDIO_EXERCISE: ${{ inputs.exercise_target || 'half-squats' }}
       GUIDE_AUDIO_PACK: ${{ inputs.audio_pack || 'half-squats-one-exercise' }}
     steps:
@@ -54,7 +54,7 @@ jobs:
           --exercise "$GUIDE_AUDIO_EXERCISE"
           --pack "$GUIDE_AUDIO_PACK"
           --limit "$GUIDE_AUDIO_LIMIT"
-          --delay-seconds 21
+          --delay-seconds 65
       - name: Commit generated clips
         run: |
           git config user.name "github-actions[bot]"
