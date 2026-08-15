@@ -30,6 +30,7 @@ import {
 } from "./movement-quality.js?v=5";
 import {
   createEmergencyAlert,
+  getEmergencyAlert,
   getPainCheckins,
   getSessions,
   interpretSafetyLanguage,
@@ -403,6 +404,9 @@ let fallSafetySecondsRemaining = FALL_SAFETY_COUNTDOWN_SECONDS;
 let fallSafetyPreviousFocus = null;
 let activeFallEvent = null;
 let activeFallAlertPromise = null;
+let fallDeliveryPollTimer = null;
+let fallDeliveryPollAlertId = "";
+let fallDeliveryPollAttempts = 0;
 let fallSafetyClarificationMode = "";
 let fallSafetyAiAttempts = 0;
 let handsFreeVoiceEnabled = false;
@@ -696,6 +700,96 @@ function setFallAlertStatus(state, title, message) {
   fallSafetyAlertStatusMessage.textContent = message;
 }
 
+function clearFallDeliveryPolling() {
+  if (fallDeliveryPollTimer !== null) {
+    window.clearTimeout(fallDeliveryPollTimer);
+    fallDeliveryPollTimer = null;
+  }
+  fallDeliveryPollAlertId = "";
+  fallDeliveryPollAttempts = 0;
+}
+
+function renderFallCallDeliveryStatus(alert) {
+  const status = String(alert?.voice_delivery_status || "").toLowerCase();
+  const detail = String(alert?.voice_delivery_detail || "")
+    .replaceAll("_", " ");
+  const who = alert?.contact_name || "your emergency contact";
+  if (status === "ringing") {
+    setFallAlertStatus(
+      "pending",
+      `The phone is ringing for ${who}`,
+      "Vonage reports that the destination phone is being alerted."
+    );
+  } else if (["answered", "machine"].includes(status)) {
+    setFallAlertStatus(
+      "sent",
+      `The call was answered at ${who}'s number`,
+      "The automated possible-fall message is playing. This may be a person or voicemail."
+    );
+  } else if (status === "completed") {
+    setFallAlertStatus(
+      "sent",
+      `Call completed to ${who}`,
+      "Vonage reports that the call connected and finished. This does not confirm who answered."
+    );
+  } else if ([
+    "busy",
+    "cancelled",
+    "failed",
+    "rejected",
+    "timeout",
+    "unanswered",
+  ].includes(status)) {
+    setFallAlertStatus(
+      "error",
+      `The call did not connect to ${who}`,
+      `Vonage status: ${status}${detail ? ` (${detail})` : ""}. Use Call 995 or another phone if urgent.`
+    );
+  }
+  return status;
+}
+
+function scheduleFallDeliveryPoll(alertId) {
+  if (!alertId) return;
+  if (fallDeliveryPollAttempts >= 15) {
+    clearFallDeliveryPolling();
+    return;
+  }
+  fallDeliveryPollAlertId = alertId;
+  fallDeliveryPollTimer = window.setTimeout(async () => {
+    fallDeliveryPollTimer = null;
+    if (fallDeliveryPollAlertId !== alertId) return;
+    fallDeliveryPollAttempts += 1;
+    try {
+      const latest = await getEmergencyAlert(alertId);
+      if (fallDeliveryPollAlertId !== alertId) return;
+      const providerStatus = renderFallCallDeliveryStatus(latest);
+      if ([
+        "completed",
+        "busy",
+        "cancelled",
+        "failed",
+        "rejected",
+        "timeout",
+        "unanswered",
+      ].includes(providerStatus)) {
+        clearFallDeliveryPolling();
+        return;
+      }
+    } catch (_) {
+      // Keep the accepted-request message and retry briefly. Urgent manual
+      // actions remain visible throughout the status check.
+    }
+    scheduleFallDeliveryPoll(alertId);
+  }, 2000);
+}
+
+function beginFallDeliveryPolling(alert) {
+  clearFallDeliveryPolling();
+  if (!alert?.id || !alert?.voice_call_id) return;
+  scheduleFallDeliveryPoll(alert.id);
+}
+
 function updateFallContactNotice(alert) {
   if (!alert) {
     fallSafetyContactNotice.textContent =
@@ -768,9 +862,9 @@ function renderFallAlertDelivery(alert) {
   const who = alert.contact_name || "your emergency contact";
   if (alert.status === "notified") {
     setFallAlertStatus(
-      "sent",
-      `Call requested for ${who}`,
-      "Vonage accepted the call request. This does not mean the contact answered, and no ambulance was dispatched."
+      "pending",
+      `Call attempt created for ${who}`,
+      "Vonage accepted the request. PhysioVision is checking whether the phone rings or the call fails."
     );
   } else if (alert.status === "partial") {
     setFallAlertStatus(
@@ -806,6 +900,7 @@ async function submitFallEmergencyResponse(response) {
     const updated = await respondEmergencyAlert(alert.id, response);
     if (response !== "okay") {
       renderFallAlertDelivery(updated);
+      beginFallDeliveryPolling(updated);
       if (["notified", "partial"].includes(updated.status)) {
         speakMovementGuide(
           "An alert request was sent to your emergency contact. This does not mean they answered. No ambulance was dispatched.",
@@ -1033,6 +1128,7 @@ function startFallSafetyVoiceListening() {
 
 function beginFallSafetyCheck(event) {
   if (safetyCheckActive) return;
+  clearFallDeliveryPolling();
   stopMovementAiGuide();
   safetyCheckActive = true;
   fallSafetyClarificationMode = "";
@@ -1110,6 +1206,7 @@ function beginFallSafetyCheck(event) {
 
 function closeFallSafetyCheck() {
   clearFallSafetyTimer();
+  clearFallDeliveryPolling();
   voiceGuidance.cancel();
   safetyCheckActive = false;
   fallMonitor.resumeAfterCheck();

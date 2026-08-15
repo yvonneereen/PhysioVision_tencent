@@ -23,6 +23,7 @@ assert.match(main, /Fall check ready · emergency contact calls off/);
 assert.match(main, /Verify your emergency contact in My profile/);
 assert.match(api, /export async function createEmergencyAlert/);
 assert.match(api, /export async function respondEmergencyAlert/);
+assert.match(api, /export async function getEmergencyAlert/);
 
 assert.match(
   main,
@@ -30,6 +31,10 @@ assert.match(
   "the backend countdown must be registered as soon as the fall dialog opens"
 );
 assert.match(main, /respondEmergencyAlert\(alert\.id, response\)/);
+assert.match(main, /getEmergencyAlert\(alertId\)/);
+assert.match(main, /voice_delivery_status/);
+assert.match(main, /The phone is ringing for/);
+assert.match(main, /The call did not connect to/);
 assert.match(main, /response !== "okay"[\s\S]*renderFallAlertDelivery/);
 assert.match(main, /It will not call 995 automatically/);
 assert.match(main, /FALL_SAFETY_COUNTDOWN_SECONDS = 60/);

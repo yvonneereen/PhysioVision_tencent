@@ -358,6 +358,24 @@ class ProductionReadinessTests(APITestCase):
         )
         deliver_notification.assert_called_once()
 
+        with patch(
+            'api.core.views.get_vonage_voice_call_status',
+            return_value={
+                'status': 'rejected',
+                'detail': 'invalid_number',
+                'duration': '',
+            },
+        ):
+            delivery = self.client.get(
+                f"/api/auth/emergency-alerts/{created.data['id']}/",
+            )
+        self.assertEqual(delivery.status_code, 200)
+        self.assertEqual(delivery.data['voice_delivery_status'], 'rejected')
+        self.assertEqual(
+            delivery.data['voice_delivery_detail'],
+            'invalid_number',
+        )
+
     @override_settings(
         EMERGENCY_ALERT_PROVIDER='vonage',
         VONAGE_APPLICATION_ID='test-application-id',
@@ -405,7 +423,8 @@ class ProductionReadinessTests(APITestCase):
         EMERGENCY_ALERT_PROVIDER='vonage',
         VONAGE_APPLICATION_ID='test-application-id',
         VONAGE_PRIVATE_KEY='test-private-key',
-        VONAGE_FROM_NUMBER='123456789',
+        VONAGE_FROM_NUMBER='12345678901',
+        VONAGE_DEMO_MODE=True,
         VONAGE_DEMO_TO_NUMBER='+65 9123 4567',
     )
     @patch(
@@ -449,6 +468,41 @@ class ProductionReadinessTests(APITestCase):
             }],
         )
         self.assertNotIn('answer_url', payload)
+
+    @override_settings(
+        EMERGENCY_ALERT_PROVIDER='vonage',
+        VONAGE_APPLICATION_ID='test-application-id',
+        VONAGE_PRIVATE_KEY='test-private-key',
+        VONAGE_FROM_NUMBER='123456789',
+        VONAGE_DEMO_TO_NUMBER='+65 9123 4567',
+    )
+    @patch(
+        'api.core.emergency_alerts._vonage_access_token',
+        return_value='signed-test-token',
+    )
+    @patch('api.core.emergency_alerts.urlopen')
+    def test_vonage_call_status_is_checked_after_request(
+        self,
+        urlopen,
+        _access_token,
+    ):
+        from .emergency_alerts import get_vonage_voice_call_status
+
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = (
+            b'{"uuid":"vonage-call-id","status":"rejected"}'
+        )
+        urlopen.return_value = response
+
+        delivery = get_vonage_voice_call_status('vonage-call-id')
+
+        self.assertEqual(delivery['status'], 'rejected')
+        request = urlopen.call_args.args[0]
+        self.assertEqual(
+            request.full_url,
+            'https://api.nexmo.com/v1/calls/vonage-call-id',
+        )
+        self.assertEqual(request.get_method(), 'GET')
 
     @override_settings(
         EMERGENCY_ALERT_PROVIDER='vonage',

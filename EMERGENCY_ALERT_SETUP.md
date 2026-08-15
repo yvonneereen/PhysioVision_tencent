@@ -51,6 +51,7 @@ EMERGENCY_ALERT_PROVIDER=vonage
 VONAGE_APPLICATION_ID=your-vonage-application-id
 VONAGE_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----
 VONAGE_FROM_NUMBER=123456789
+VONAGE_DEMO_MODE=True
 VONAGE_DEMO_TO_NUMBER=+6580380208
 EMERGENCY_ALERT_DELAY_SECONDS=60
 EMERGENCY_CONTACT_VERIFICATION_TTL_MINUTES=10
@@ -61,6 +62,12 @@ EMERGENCY_CONTACT_VERIFICATION_MAX_ATTEMPTS=5
 Replace the example recipient with the phone number verified in your Vonage
 account. `VONAGE_DEMO_TO_NUMBER` is an allowlist: contact verification and fall
 calls will be rejected if the saved contact has a different number.
+
+With `VONAGE_DEMO_MODE=True`, the backend always uses Vonage's documented
+`123456789` trial caller ID, even if `VONAGE_FROM_NUMBER` was entered
+incorrectly in the hosting dashboard. A paid deployment using a rented Vonage
+number must set `VONAGE_DEMO_MODE=False` and set `VONAGE_FROM_NUMBER` to that
+rented number.
 
 In Render, add the complete contents of the downloaded `.key` file as the
 `VONAGE_PRIVATE_KEY` secret. It may be a multiline value. Never expose the

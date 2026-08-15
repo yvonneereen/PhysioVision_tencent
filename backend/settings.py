@@ -89,6 +89,7 @@ REST_FRAMEWORK = {
         'emergency_contact_verification': '5/hour',
         'emergency_alert_create': '12/hour',
         'emergency_alert_response': '30/hour',
+        'emergency_alert_status': '180/hour',
         'safety_language_interpretation': '60/hour',
         'guidance_speech': '180/hour',
         'agent_chat': '60/hour',
@@ -269,6 +270,11 @@ EMERGENCY_ALERT_PROVIDER = env(
 VONAGE_APPLICATION_ID = env('VONAGE_APPLICATION_ID', default='')
 VONAGE_PRIVATE_KEY = env('VONAGE_PRIVATE_KEY', default='')
 VONAGE_FROM_NUMBER = env('VONAGE_FROM_NUMBER', default='')
+# The prototype uses Vonage's documented trial caller ID. Keeping this
+# explicit prevents a placeholder-like number from being accepted initially
+# and rejected later in the provider call lifecycle. Paid deployments with a
+# rented Vonage number must set this to False.
+VONAGE_DEMO_MODE = env.bool('VONAGE_DEMO_MODE', default=True)
 # Free Vonage demo accounts may call only a verified number. This allowlist is
 # also a safety control: emergency alerts cannot be redirected to another phone.
 VONAGE_DEMO_TO_NUMBER = env('VONAGE_DEMO_TO_NUMBER', default='')

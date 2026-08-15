@@ -45,6 +45,8 @@ services:
         sync: false
       - key: VONAGE_FROM_NUMBER
         value: "123456789"
+      - key: VONAGE_DEMO_MODE
+        value: "True"
       - key: VONAGE_DEMO_TO_NUMBER
         sync: false
       - key: EMERGENCY_ALERT_DELAY_SECONDS

@@ -23,10 +23,12 @@ from .ai import generate_agent_reply
 from .clinician_assistant import dispatch_clinician_command
 from .email_delivery import EmailDeliveryError, deliver_email
 from .emergency_alerts import (
+    EmergencyNotificationError,
     EmergencyVerificationCooldown,
     EmergencyVerificationDeliveryError,
     dispatch_emergency_alert,
     emergency_contact_ready,
+    get_vonage_voice_call_status,
     issue_emergency_contact_verification,
     verify_emergency_contact_code,
 )
@@ -983,6 +985,14 @@ class EmergencyAlertDetailView(APIView):
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'emergency_alert_response'
 
+    def get_throttles(self):
+        self.throttle_scope = (
+            'emergency_alert_status'
+            if self.request.method == 'GET'
+            else 'emergency_alert_response'
+        )
+        return super().get_throttles()
+
     def get_alert(self, request, alert_id):
         if (
             request.user.role != UserRole.PATIENT
@@ -1001,7 +1011,28 @@ class EmergencyAlertDetailView(APIView):
                 {'detail': 'Emergency alert not found.'},
                 status=status.HTTP_404_NOT_FOUND,
             )
-        return Response(EmergencyAlertSerializer(alert).data)
+        data = dict(EmergencyAlertSerializer(alert).data)
+        data.update({
+            'voice_delivery_status': '',
+            'voice_delivery_detail': '',
+            'voice_delivery_duration': '',
+            'voice_delivery_check_error': '',
+        })
+        if alert.voice_call_id:
+            try:
+                delivery = get_vonage_voice_call_status(
+                    alert.voice_call_id,
+                )
+            except EmergencyNotificationError:
+                data['voice_delivery_check_error'] = (
+                    'The provider accepted the call request, but its current '
+                    'delivery status is temporarily unavailable.'
+                )
+            else:
+                data['voice_delivery_status'] = delivery['status']
+                data['voice_delivery_detail'] = delivery['detail']
+                data['voice_delivery_duration'] = delivery['duration']
+        return Response(data)
 
     def post(self, request, alert_id):
         if (

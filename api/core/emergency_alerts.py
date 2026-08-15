@@ -6,6 +6,7 @@ import time
 import uuid
 from datetime import timedelta
 from urllib.error import HTTPError, URLError
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 import jwt
@@ -25,6 +26,23 @@ from .models import (
 
 
 logger = logging.getLogger(__name__)
+
+VONAGE_DEMO_CALLER_ID = "123456789"
+
+
+VONAGE_CALL_STATUSES = frozenset({
+    "started",
+    "ringing",
+    "answered",
+    "machine",
+    "completed",
+    "busy",
+    "cancelled",
+    "failed",
+    "rejected",
+    "timeout",
+    "unanswered",
+})
 
 
 class EmergencyNotificationError(Exception):
@@ -46,7 +64,10 @@ def emergency_provider_ready():
         settings.EMERGENCY_ALERT_PROVIDER == "vonage"
         and bool(settings.VONAGE_APPLICATION_ID)
         and bool(settings.VONAGE_PRIVATE_KEY)
-        and bool(settings.VONAGE_FROM_NUMBER)
+        and (
+            settings.VONAGE_DEMO_MODE
+            or bool(settings.VONAGE_FROM_NUMBER)
+        )
         and bool(settings.VONAGE_DEMO_TO_NUMBER)
     )
 
@@ -65,6 +86,12 @@ def emergency_contact_ready(profile):
 def normalize_outbound_phone(phone):
     digits = "".join(character for character in phone if character.isdigit())
     return digits
+
+
+def vonage_caller_number():
+    if settings.VONAGE_DEMO_MODE:
+        return VONAGE_DEMO_CALLER_ID
+    return normalize_outbound_phone(settings.VONAGE_FROM_NUMBER)
 
 
 def vonage_demo_recipient_allowed(phone):
@@ -119,7 +146,7 @@ def _vonage_call(phone, message):
         }],
         "from": {
             "type": "phone",
-            "number": normalize_outbound_phone(settings.VONAGE_FROM_NUMBER),
+            "number": vonage_caller_number(),
         },
         "ncco": [{
             "action": "talk",
@@ -153,6 +180,42 @@ def _vonage_call(phone, message):
             "Vonage did not return a call ID."
         )
     return call_id
+
+
+def get_vonage_voice_call_status(call_id):
+    """Return Vonage's current state for an accepted outbound call."""
+    normalized_call_id = str(call_id or "").strip()
+    if not normalized_call_id or len(normalized_call_id) > 80:
+        raise EmergencyNotificationError("The provider call ID is invalid.")
+    request = Request(
+        "https://api.nexmo.com/v1/calls/"
+        + quote(normalized_call_id, safe=""),
+        headers={
+            "Authorization": f"Bearer {_vonage_access_token()}",
+            "Accept": "application/json",
+        },
+        method="GET",
+    )
+    try:
+        with urlopen(request, timeout=10) as response:
+            result = json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        raise EmergencyNotificationError(
+            f"Vonage call status is unavailable ({exc.code})."
+        ) from exc
+    except (URLError, TimeoutError, ValueError) as exc:
+        raise EmergencyNotificationError(
+            "Vonage call status could not be checked."
+        ) from exc
+
+    status = str(result.get("status", "")).strip().lower()
+    if status not in VONAGE_CALL_STATUSES:
+        status = "unknown"
+    return {
+        "status": status,
+        "detail": str(result.get("detail", "")).strip().lower()[:80],
+        "duration": str(result.get("duration", "")).strip()[:20],
+    }
 
 
 def place_emergency_voice_call(phone, message):
