@@ -1225,8 +1225,8 @@ assert.match(
 );
 assert.match(
   countdownSource,
-  /beginVisibleCountdown\(\);[\s\S]*?I heard pain level \$\{completed\.painLevel\} out of 10\.[\s\S]*?Camera setup is starting now\. Stay near your device\.[\s\S]*?voiceGroup:\s*PAIN_PROMPT_VOICE_GROUP/,
-  "the countdown should start immediately while repeating the heard score in one device-voice utterance"
+  /Pain level confirmed\. Camera setup will begin in three seconds\. Stay near your device\. If your browser asks for camera access, choose Allow\. I will tell you when to step back after the camera starts\.[\s\S]*?voiceGroup:\s*PAIN_PROMPT_VOICE_GROUP[\s\S]*?onEnd:\s*beginVisibleCountdown/,
+  "the guide should finish the complete permission instruction before starting the countdown"
 );
 assert.doesNotMatch(
   countdownSource,
@@ -1243,20 +1243,20 @@ assert.match(
   /speakMovementGuide\([\s\S]*?voiceGroup:\s*PAIN_PROMPT_VOICE_GROUP/,
   "the post-confirmation handoff should speak immediately in the same voice"
 );
-assert.doesNotMatch(
-  countdownSource,
-  /onEnd:\s*beginVisibleCountdown|beginCountdownWhenSpeechIsIdle|voiceGuidance\.isSpeaking/,
-  "speech generation or playback must never hold the visible countdown at three seconds"
-);
 assert.match(
   countdownSource,
+  /onEnd:\s*beginVisibleCountdown|beginCountdownWhenSpeechIsIdle|voiceGuidance\.isSpeaking/,
+  "the camera handoff should wait for browser speech to finish, including Safari's missing-end-event fallback"
+);
+assert.doesNotMatch(
+  countdownSource,
   /voiceGuidance\.cancel\(\);[\s\S]*?startCameraSetupAfterCountdown\(pending\)/,
-  "late audio should be cancelled before the browser camera permission step"
+  "camera setup must not cancel the permission instruction mid-sentence"
 );
 assert.match(
   functionSource("spokenPainConfirmationQuestion", "isPainSafetyStage"),
-  /context === "after"[\s\S]*?Please confirm the pain levels shown on screen\. Say yes or change\.[\s\S]*?painConfirmationQuestion\(level\)/,
-  "after-exercise pain comparisons should use a fixed prepared spoken prompt while retaining exact numbers on screen"
+  /return painConfirmationQuestion\(level\)/,
+  "browser speech should read the exact recognized pain level in the confirmation question"
 );
 const acceptPainLevelSource = functionSource(
   "acceptPainLevel",
@@ -1264,13 +1264,13 @@ const acceptPainLevelSource = functionSource(
 );
 assert.match(
   acceptPainLevelSource,
-  /handsFreeVoiceEnabled[\s\S]*?context === "before"[\s\S]*?startAfter \|\| painCheckinState\.continuation[\s\S]*?!requiresPainSafetyInterview\(\)[\s\S]*?finishPainCheckin\(\)/,
-  "a routine hands-free pre-exercise score should continue without spending another TTS request on yes/no confirmation"
+  /painCheckinState\.painLevel = level;[\s\S]*?beginPainConfirmation\(\)/,
+  "every recognized pain level should be confirmed before camera setup continues"
 );
-assert.match(
+assert.doesNotMatch(
   acceptPainLevelSource,
-  /!painCheckinState\.forceSafetyInterview[\s\S]*?!requiresPainSafetyInterview\(\)/,
-  "concerning or forced-safety scores must not bypass the confirmation and safety flow"
+  /finishPainCheckin\(\)/,
+  "no pain score should bypass the explicit confirmation and safety flow"
 );
 const cancelCountdownSource = functionSource(
   "cancelCameraSetupCountdown",

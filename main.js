@@ -5855,14 +5855,8 @@ function painConfirmationQuestion(level) {
 }
 
 function spokenPainConfirmationQuestion(level) {
-  if (
-    painCheckinState?.context === "after"
-    && Number.isInteger(confirmedPreExercisePain)
-  ) {
-    // The exact before/after numbers remain visible. A fixed spoken prompt
-    // avoids 121 audio variants and keeps the response immediate.
-    return "Please confirm the pain levels shown on screen. Say yes or change.";
-  }
+  // Fixed pain prompts now use browser speech, so the guide can speak the
+  // recognized number exactly without consuming Gemini TTS quota.
   return painConfirmationQuestion(level);
 }
 
@@ -6106,33 +6100,33 @@ function continueAfterPainCheckin(completed) {
       cameraSetupStatus.hidden = true;
       cameraSetupStatus.textContent = "";
       renderPrimaryCameraAction();
-      // A delayed or unusually long audio clip must not start speaking across
-      // the browser's camera permission prompt.
-      voiceGuidance.cancel();
       startCameraSetupAfterCountdown(pending);
     }, 1000);
   };
-  // The visible countdown begins now. Speech playback is supplementary and
-  // can never hold camera setup in the three-second state.
-  beginVisibleCountdown();
-  const heardPainLevel = Number.isInteger(completed.painLevel)
-    ? `I heard pain level ${completed.painLevel} out of 10.`
-    : "";
-  const cameraStartAnnouncement = localizedGuidanceParts([
-    heardPainLevel,
-    "Camera setup is starting now. Stay near your device.",
-  ]);
-  speakMovementGuide(
-    cameraStartAnnouncement,
+  const spoken = speakMovementGuide(
+    "Pain level confirmed. Camera setup will begin in three seconds. Stay near your device. If your browser asks for camera access, choose Allow. I will tell you when to step back after the camera starts.",
     {
       key: `camera-setup:countdown:${completed.context}`,
       interrupt: true,
       voiceGroup: PAIN_PROMPT_VOICE_GROUP,
       rate: PAIN_PROMPT_RATE,
       pitch: PAIN_PROMPT_PITCH,
-      onUnavailable: () => {},
+      onEnd: beginVisibleCountdown,
     }
   );
+  if (!spoken) beginVisibleCountdown();
+  // Safari can occasionally omit SpeechSynthesis's end event. Wait until the
+  // full sentence is no longer playing before starting the three-second
+  // countdown, so camera permission never cuts the instruction short.
+  const beginCountdownWhenSpeechIsIdle = () => {
+    if (!cameraSetupCountdown || cameraSetupCountdown.timer) return;
+    if (voiceGuidance.isSpeaking) {
+      window.setTimeout(beginCountdownWhenSpeechIsIdle, 500);
+      return;
+    }
+    beginVisibleCountdown();
+  };
+  window.setTimeout(beginCountdownWhenSpeechIsIdle, 12000);
 }
 
 function renderRecordedPain({ painLevel, context }) {
@@ -7752,21 +7746,6 @@ function acceptPainLevel(level) {
     return;
   }
   painCheckinState.painLevel = level;
-  const canContinueWithoutSpokenConfirmation = Boolean(
-    handsFreeVoiceEnabled
-    && painCheckinState.context === "before"
-    && (painCheckinState.startAfter || painCheckinState.continuation)
-    && !painCheckinState.forceSafetyInterview
-    && !requiresPainSafetyInterview()
-  );
-  if (canContinueWithoutSpokenConfirmation) {
-    // The camera handoff repeats the recognized number in the same utterance,
-    // so a routine pre-exercise answer does not spend a second TTS request on
-    // a separate yes/no exchange. Concerning scores still require explicit
-    // confirmation before the safety interview begins.
-    finishPainCheckin();
-    return;
-  }
   beginPainConfirmation();
 }
 
