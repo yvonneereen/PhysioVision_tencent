@@ -2,6 +2,8 @@ const COACHING_SCORING_VERSION = 3;
 const DEFAULT_GRACE_REPETITIONS = 2;
 const DEFAULT_DEDUCTION = 5;
 const DEFAULT_MAX_DEDUCTION = 30;
+const PROTOTYPE_POINTS_PER_OBSERVED_REPETITION = 1;
+const PROTOTYPE_MAX_DEDUCTION_PER_OBSERVATION = 10;
 
 const REQUIRED_RULE_CARD_FIELDS = Object.freeze([
   "clinicalClaim",
@@ -39,6 +41,52 @@ function coachingRecords(cuesTriggered = [], version = COACHING_SCORING_VERSION)
   return (Array.isArray(cuesTriggered) ? cuesTriggered : []).filter(
     (cue) => Number(cue?.scoring_version) === version,
   );
+}
+
+function prototypeObservationRecords(cuesTriggered = []) {
+  return (Array.isArray(cuesTriggered) ? cuesTriggered : []).filter(
+    (cue) => cue?.kind === "movement_observation"
+      && (nonNegativeNumber(cue?.trigger_count) ?? 0) > 0,
+  );
+}
+
+/**
+ * A transparent engineering/demo score for rules that have not passed the
+ * clinical validation gate. It is deliberately kept separate from the
+ * validation-gated coaching-response score used by longitudinal trends.
+ */
+export function calculatePrototypeMovementScore({
+  cuesTriggered = [],
+  repetitions = 0,
+} = {}) {
+  const reps = Math.max(0, Math.round(nonNegativeNumber(repetitions) ?? 0));
+  if (reps < 1) return null;
+
+  const deductions = prototypeObservationRecords(cuesTriggered).map((cue) => {
+    const observedRepetitions = Math.min(
+      reps,
+      Math.max(1, Math.round(nonNegativeNumber(cue.trigger_count) ?? 1)),
+    );
+    const deduction = Math.min(
+      PROTOTYPE_MAX_DEDUCTION_PER_OBSERVATION,
+      observedRepetitions * PROTOTYPE_POINTS_PER_OBSERVED_REPETITION,
+    );
+    return {
+      rule_id: String(cue.rule_id ?? "prototype-observation"),
+      cue_text: String(cue.cue_text ?? cue.rule_id ?? "Prototype observation"),
+      observed_repetitions: observedRepetitions,
+      deduction,
+    };
+  });
+  const totalDeduction = Math.min(
+    DEFAULT_MAX_DEDUCTION,
+    deductions.reduce((total, item) => total + item.deduction, 0),
+  );
+  return {
+    score: Math.round(100 - totalDeduction),
+    total_deduction: totalDeduction,
+    deductions,
+  };
 }
 
 export function isClinicalRuleScoreable(cue = {}) {
@@ -536,11 +584,17 @@ export function buildSessionAssessmentSummary({
       cuesTriggered,
       repetitions: repetitionsCompleted,
     });
+  const prototypeScore = trackingStatus === "unable_to_assess"
+    ? null
+    : calculatePrototypeMovementScore({
+      cuesTriggered,
+      repetitions: repetitionsCompleted,
+    });
   const movementStatus = Number(repetitionsCompleted) < 1
     || trackingStatus === "unable_to_assess"
       ? "unable_to_assess"
       : validatedRuleCount < 1 || validatedRuleVersions.length < 1
-        ? "not_clinically_scored"
+        ? "prototype_scored"
         : "assessed";
   const targetSets = Math.max(0, Math.round(Number(setsTarget) || 0));
   const completedSets = Math.max(0, Math.round(Number(setsCompleted) || 0));
@@ -580,14 +634,23 @@ export function buildSessionAssessmentSummary({
     },
     movement_execution: {
       status: movementStatus,
-      label: "camera_based_coaching_response",
-      score: movementStatus === "assessed" ? score : null,
+      label: movementStatus === "prototype_scored"
+        ? "prototype_camera_movement_score"
+        : "camera_based_coaching_response",
+      score: movementStatus === "assessed"
+        ? score
+        : movementStatus === "prototype_scored"
+          ? prototypeScore?.score ?? 100
+          : null,
+      prototype_deductions: movementStatus === "prototype_scored"
+        ? prototypeScore?.deductions ?? []
+        : [],
       validated_rule_count: validatedRuleCount,
       rule_versions: validatedRuleVersions,
       symmetry_rule_validated: false,
       observed_unvalidated_rule_ids: observedRuleIds,
-      reason: movementStatus === "not_clinically_scored"
-        ? "No configured rule has completed technical validation, clinical validation, and recorded physiotherapist approval."
+      reason: movementStatus === "prototype_scored"
+        ? "Engineering observations produced a transparent prototype score. This is not a clinical score, diagnosis, or substitute for physiotherapist assessment."
         : movementStatus === "unable_to_assess"
           ? "No assessable repetition was captured."
           : "Only validation-gated rules contributed to this coaching-response score.",

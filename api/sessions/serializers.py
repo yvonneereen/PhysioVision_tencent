@@ -123,7 +123,8 @@ class SessionSerializer(serializers.ModelSerializer):
             )
         movement = value.get('movement_execution', {})
         if movement.get('status') not in {
-            'assessed', 'not_clinically_scored', 'unable_to_assess'
+            'assessed', 'prototype_scored', 'not_clinically_scored',
+            'unable_to_assess'
         }:
             raise serializers.ValidationError(
                 'Movement execution has an unsupported status.'
@@ -152,6 +153,44 @@ class SessionSerializer(serializers.ModelSerializer):
             ):
                 raise serializers.ValidationError(
                     'An assessed movement score must be between 0 and 100.'
+                )
+        elif movement.get('status') == 'prototype_scored':
+            score = movement.get('score')
+            deductions = movement.get('prototype_deductions')
+            if movement.get('label') != 'prototype_camera_movement_score':
+                raise serializers.ValidationError(
+                    'A prototype score must be labelled as a prototype camera movement score.'
+                )
+            if (
+                isinstance(score, bool)
+                or not isinstance(score, (int, float))
+                or not 0 <= score <= 100
+            ):
+                raise serializers.ValidationError(
+                    'A prototype movement score must be between 0 and 100.'
+                )
+            if not isinstance(deductions, list):
+                raise serializers.ValidationError(
+                    'Prototype score deductions must be provided as a list.'
+                )
+            deduction_total = 0
+            for deduction in deductions:
+                points = deduction.get('deduction') if isinstance(
+                    deduction, dict
+                ) else None
+                if (
+                    isinstance(points, bool)
+                    or not isinstance(points, (int, float))
+                    or not 0 <= points <= 10
+                ):
+                    raise serializers.ValidationError(
+                        'Each prototype observation deduction must be between 0 and 10.'
+                    )
+                deduction_total += points
+            expected_score = 100 - min(30, deduction_total)
+            if score != expected_score:
+                raise serializers.ValidationError(
+                    'The prototype score does not match its recorded deductions.'
                 )
         elif movement.get('score') is not None:
             raise serializers.ValidationError(

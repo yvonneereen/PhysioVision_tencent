@@ -1,4 +1,4 @@
-import { movementQualityFromSession } from "./movement-quality.js?v=4";
+import { movementQualityFromSession } from "./movement-quality.js?v=5";
 
 export const PROVISIONAL_TREND_THRESHOLDS = Object.freeze({
   qualityDeclinePoints: 8,

@@ -13,7 +13,7 @@ function loadMovementApp() {
   if (!movementPromise) {
     movementPromise = Promise.all([
       import("./exercise-library.js?v=21"),
-      import("./main.js?v=163"),
+      import("./main.js?v=164"),
     ]).catch((error) => {
       movementPromise = null;
       throw error;
@@ -39,7 +39,7 @@ function loadPatientApp() {
   if (!patientPromise) {
     patientPromise = Promise.all([
       loadSharedAccountApp(),
-      import("./patient-dashboard.js?v=70"),
+      import("./patient-dashboard.js?v=71"),
     ]).catch((error) => {
       patientPromise = null;
       throw error;
@@ -52,7 +52,7 @@ function loadClinicianApp() {
   if (!clinicianPromise) {
     clinicianPromise = Promise.all([
       loadSharedAccountApp(),
-      import("./therapist.js?v=50"),
+      import("./therapist.js?v=51"),
     ]).catch((error) => {
       clinicianPromise = null;
       throw error;

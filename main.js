@@ -7,7 +7,7 @@ import {
   measureHandExerciseFrame,
   measurePoseExerciseFrame,
 } from "./exercise-tracking.js?v=3";
-import { FeedbackEngine, EXERCISES } from "./feedback/engine.js?v=54";
+import { FeedbackEngine, EXERCISES } from "./feedback/engine.js?v=55";
 import { POSES } from "./poses.js";
 import {
   calibrationFrameMatchesPhase,
@@ -27,7 +27,7 @@ import {
 import {
   buildSessionAssessmentSummary,
   CoachingQualitySession,
-} from "./movement-quality.js?v=4";
+} from "./movement-quality.js?v=5";
 import {
   createEmergencyAlert,
   getPainCheckins,
@@ -41,7 +41,7 @@ import {
   sendAgentMessage,
   updatePainCheckin,
 } from "./api.js?v=36";
-import { analysePatientTrend } from "./patient-dashboard-state.js?v=16";
+import { analysePatientTrend } from "./patient-dashboard-state.js?v=18";
 import { DRAFT_EXERCISES } from "./exercises/catalog.js?v=3";
 import { getSpeechLocale, translateText } from "./i18n.js?v=47";
 import { preloadPreparedGuidanceSpeech } from "./guide-audio.js?v=5";
@@ -6884,8 +6884,9 @@ function openSessionSummary(completed, beforePain) {
   sessionSummaryQualityEl.textContent = movementAssessment?.status === "assessed"
     && Number.isFinite(Number(movementAssessment.score))
     ? `${Math.round(Number(movementAssessment.score))}/100 coaching response`
-    : movementAssessment?.status === "not_clinically_scored"
-      ? "Not clinically scored"
+    : movementAssessment?.status === "prototype_scored"
+      && Number.isFinite(Number(movementAssessment.score))
+      ? `${Math.round(Number(movementAssessment.score))}/100 prototype score`
       : "Unable to assess";
   sessionSummaryPainEl.textContent = painResponseLabel(
     beforePain,
@@ -6928,23 +6929,30 @@ function renderCoachingScoreExplanation(snapshot = {}) {
   const records = (snapshot.cues_triggered ?? []).filter(
     (cue) => cue?.kind === "coaching_reminder" && cue?.delivered,
   );
-  if (movementAssessment?.status === "not_clinically_scored") {
+  if (movementAssessment?.status === "prototype_scored") {
+    const deductions = movementAssessment.prototype_deductions ?? [];
     const observedItems = observations.map((observation) => {
+      const deduction = deductions.find(
+        (item) => item.rule_id === observation.rule_id,
+      );
       const description = escapeHtml(
         observation.cue_text || observation.rule_id || "Prototype observation",
       );
-      const repetitions = Math.max(
-        1,
-        Math.round(Number(observation.trigger_count) || 1),
+      const repetitions = Math.max(1, Math.round(
+        Number(deduction?.observed_repetitions ?? observation.trigger_count) || 1,
+      ));
+      const points = Math.max(0, Math.round(Number(deduction?.deduction) || 0));
+      return (
+        `<li><strong>−${points} point${points === 1 ? "" : "s"}:</strong> `
+        + `${description} (${repetitions} observed repetition${repetitions === 1 ? "" : "s"}).</li>`
       );
-      return `<li>${description} (${repetitions} observed repetition${repetitions === 1 ? "" : "s"}).</li>`;
     });
     sessionSummaryCueEl.innerHTML = (
-      "<strong>Movement execution was not clinically scored</strong>"
-      + "<p>The camera rules for this exercise have not yet completed technical validation, clinical validation, and recorded physiotherapist approval. Prototype observations did not deduct points.</p>"
+      "<strong>How camera observations affected the prototype score</strong>"
+      + "<p>This engineering score deducts one point per observed repetition, capped at 10 points per observation and 30 points per session. It is not a clinical score, diagnosis, or substitute for physiotherapist assessment.</p>"
       + (observedItems.length
         ? `<ul>${observedItems.join("")}</ul>`
-        : "<p>No prototype movement observation was recorded.</p>")
+        : "<p>No prototype movement observation was recorded, so no points were deducted.</p>")
     );
     return;
   }

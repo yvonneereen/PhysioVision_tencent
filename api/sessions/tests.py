@@ -64,6 +64,25 @@ class SessionAssessmentSerializerTests(SimpleTestCase):
 
         self.assertTrue(serializer.is_valid(), serializer.errors)
 
+    def test_accepts_transparently_labelled_prototype_score(self):
+        assessment = self.prototype_assessment()
+        assessment["movement_execution"] = {
+            "status": "prototype_scored",
+            "label": "prototype_camera_movement_score",
+            "score": 80,
+            "prototype_deductions": [
+                {"rule_id": "knee-difference", "deduction": 5},
+                {"rule_id": "knee-forward", "deduction": 5},
+                {"rule_id": "personal-range", "deduction": 10},
+            ],
+        }
+        serializer = SessionSerializer(
+            data={"assessment_summary": assessment},
+            partial=True,
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
     def test_rejects_client_claim_of_unapproved_clinical_score(self):
         assessment = self.prototype_assessment()
         assessment["movement_execution"] = {

@@ -415,6 +415,26 @@ assert.equal(
 }
 
 {
+  // A user may begin immediately after the spoken "Begin now" cue. Two clear
+  // standing frames followed by a full squat must count as repetition one,
+  // even if the longer start-position confirmation had not yet elapsed.
+  const engine = new FeedbackEngine("half-squats", "right");
+  engine.update(halfSquatPose(), 0);
+  engine.update(halfSquatPose(), 80);
+  engine.update(halfSquatBottom(), 120);
+  engine.update(halfSquatBottom(), 300);
+  engine.update(halfSquatPose(), 380);
+  const completed = engine.update(halfSquatPose(), 520);
+
+  assert.equal(completed.startConfirmed, true);
+  assert.equal(
+    completed.repCount,
+    1,
+    "the first prompt down-and-up cycle must not be consumed as initialization",
+  );
+}
+
+{
   const engine = new FeedbackEngine("half-squats", "right");
   engine.update(halfSquatBottom(), 0);
   engine.update(halfSquatBottom(), 500);

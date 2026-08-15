@@ -308,7 +308,9 @@ async function showPatientDetail(patientId) {
       }[assessment.tracking_validity?.status] ?? "Tracking not recorded";
       const execution = assessment.movement_execution?.status === "assessed"
         ? `Coaching response ${assessment.movement_execution.score}/100`
-        : assessment.movement_execution?.status === "not_clinically_scored"
+        : assessment.movement_execution?.status === "prototype_scored"
+          ? `Prototype movement score ${assessment.movement_execution.score}/100`
+          : assessment.movement_execution?.status === "not_clinically_scored"
           ? "Execution not clinically scored"
           : "Execution unable to assess";
       return `

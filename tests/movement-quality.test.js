@@ -2,11 +2,33 @@ import assert from "node:assert/strict";
 
 import {
   buildSessionAssessmentSummary,
+  calculatePrototypeMovementScore,
   calculateMovementQuality,
   CoachingQualitySession,
   isClinicalRuleScoreable,
   movementQualityFromSession,
 } from "../movement-quality.js";
+
+assert.deepEqual(
+  calculatePrototypeMovementScore({
+    repetitions: 10,
+    cuesTriggered: [
+      { kind: "movement_observation", rule_id: "knee-difference", cue_text: "Different knee-bending angles", trigger_count: 5 },
+      { kind: "movement_observation", rule_id: "knee-forward", cue_text: "Forward knee movement", trigger_count: 5 },
+      { kind: "movement_observation", rule_id: "personal-range", cue_text: "Below saved range", trigger_count: 10 },
+    ],
+  }),
+  {
+    score: 80,
+    total_deduction: 20,
+    deductions: [
+      { rule_id: "knee-difference", cue_text: "Different knee-bending angles", observed_repetitions: 5, deduction: 5 },
+      { rule_id: "knee-forward", cue_text: "Forward knee movement", observed_repetitions: 5, deduction: 5 },
+      { rule_id: "personal-range", cue_text: "Below saved range", observed_repetitions: 10, deduction: 10 },
+    ],
+  },
+  "prototype observations should create transparent frequency-based deductions",
+);
 
 const metadata = {
   kind: "coaching_quality",
@@ -281,8 +303,14 @@ assert.equal(
   assert.equal(summary.tracking_validity.status, "partially_assessable");
   assert.equal(summary.tracking_validity.low_confidence_frames_pct, 20);
   assert.equal(summary.prescription_completion.status, "complete");
-  assert.equal(summary.movement_execution.status, "not_clinically_scored");
-  assert.equal(summary.movement_execution.score, null);
+  assert.equal(summary.movement_execution.status, "prototype_scored");
+  assert.equal(summary.movement_execution.score, 99);
+  assert.deepEqual(summary.movement_execution.prototype_deductions, [{
+    rule_id: "prototype-torso",
+    cue_text: "Prototype torso observation",
+    observed_repetitions: 1,
+    deduction: 1,
+  }]);
   assert.equal(summary.symptoms_and_safety.camera_inference_used, false);
 }
 

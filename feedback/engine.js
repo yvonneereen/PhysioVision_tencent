@@ -1,6 +1,6 @@
-import { EXERCISES, EXERCISE_MAP } from "../exercises/registry.js?v=64";
+import { EXERCISES, EXERCISE_MAP } from "../exercises/registry.js?v=65";
 import { applyCalibration } from "../personalization.js?v=14";
-import { isClinicalRuleScoreable } from "../movement-quality.js?v=4";
+import { isClinicalRuleScoreable } from "../movement-quality.js?v=5";
 
 export { EXERCISES };
 
@@ -36,6 +36,8 @@ export class FeedbackEngine {
     this.trackingLostSince = null;
     this.adaptiveBaselines = {};
     this.adaptiveTargets = {};
+    this.promptStartFrames = 0;
+    this.promptStartMeasurements = null;
     this.startConfirmed = !this.exercise.phaseConfirmationMs;
   }
 
@@ -60,18 +62,42 @@ export class FeedbackEngine {
         this.startConfirmed = !this.exercise.phaseConfirmationMs;
         this.adaptiveBaselines = {};
         this.adaptiveTargets = {};
+        this._resetPromptStartObservation();
       }
     } else if (!this.startConfirmed) {
       this.trackingLostSince = null;
       canAdvance = false;
+      const startingPhase = this.stages[0];
+      const promptStartObserved = detected === startingPhase;
+      if (promptStartObserved) {
+        this.promptStartFrames += 1;
+        this.promptStartMeasurements = angles;
+        // This provisional baseline lets the adaptive detector recognize a
+        // prompt first descent without waiting for a long standing hold.
+        this._captureAdaptiveBaseline(angles);
+      }
       if (
-        detected === this.stages[0] &&
-        this._phaseConfirmed(`start:${detected}`, timestampMs)
+        promptStartObserved &&
+        this._phaseConfirmed(`start:${startingPhase}`, timestampMs)
       ) {
         this.startConfirmed = true;
         this._captureAdaptiveBaseline(angles);
         this._resetPhaseCandidate();
-      } else if (detected !== this.stages[0]) {
+        this._resetPromptStartObservation();
+      } else if (
+        this.exercise.allowPromptStartRecovery
+        && detected === this.stages[1]
+        && this.promptStartFrames >= (this.exercise.minimumPromptStartFrames ?? 2)
+      ) {
+        // The user started moving as soon as "Begin now" was spoken. Two or
+        // more clear standing frames are enough evidence that this is a real
+        // first repetition, not a page load that began in the squat position.
+        this.startConfirmed = true;
+        this._captureAdaptiveBaseline(this.promptStartMeasurements ?? angles);
+        this._resetPhaseCandidate();
+        this._resetPromptStartObservation();
+        canAdvance = true;
+      } else if (!promptStartObserved) {
         this._interruptPhaseCandidate(timestampMs);
       }
     } else {
@@ -356,6 +382,11 @@ export class FeedbackEngine {
     this.phaseCandidate = null;
     this.phaseCandidateSince = 0;
     this.phaseCandidateInterruptedAt = null;
+  }
+
+  _resetPromptStartObservation() {
+    this.promptStartFrames = 0;
+    this.promptStartMeasurements = null;
   }
 
   _advanceToPhase(phase, angles) {

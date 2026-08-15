@@ -159,6 +159,11 @@ export const EXERCISES = [
       personalizedMarginDegrees: 4,
     },
     preferExpectedPhase: true,
+    // If the camera sees at least two clear standing frames and the person
+    // begins immediately, preserve that prompt start instead of using their
+    // first completed squat only to initialise the state machine.
+    allowPromptStartRecovery: true,
+    minimumPromptStartFrames: 2,
     // Brief landmark flicker is common while knees bend. Preserve a nearly
     // confirmed phase across a few missed frames, but reset after sustained
     // tracking loss so stale poses cannot earn a repetition.
