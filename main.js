@@ -5317,15 +5317,15 @@ function announceExerciseInstruction(prefix = "", { onEnd = null } = {}) {
   const clinicianNote = activeDose(engine.exercise).notes;
   const spokenInstruction = localizedGuidanceParts([
     prefix,
-    goalMetric(engine.exercise).isHold
-      ? "Hold measurement starts after this instruction."
-      : "Camera repetition counting is active now, including while I give this instruction.",
-    exerciseStartGuidance(engine.exercise),
     exerciseTargetGuidance(engine.exercise),
     clinicianNote ? `Your clinician's instruction is: ${clinicianNote}` : "",
     handsFreeVoiceEnabled
-      ? "Say Hey Guide for help, or Hey Guide, I need a rest."
+      ? "After this instruction, say Hey Guide followed by your question whenever you need help."
       : "",
+    // Restore the browser-voice sequence used by the August 9 guide: explain
+    // the movement last, then make "Begin now" the unmistakable start signal.
+    exerciseStartGuidance(engine.exercise),
+    engine.exercise.id === "half-squats" ? "Begin now." : "",
   ]);
   setMovementAiStatus(
     "coaching",

@@ -408,6 +408,7 @@ const liveGuideSources = [
   "Face the camera and step back until one complete hip, knee, and ankle line is visible. Keep the chair beside you and both feet in view.",
   "Camera repetition counting is active now, including while I give this instruction.",
   "Keep both feet flat and keep the chair beside you. Bend both knees and hips slowly as if sitting back toward the chair, only as far as comfortable, then stand tall to complete one repetition.",
+  "Begin now.",
   "You are going deeper than needed for this half squat. Make the next squat shallower and lower only a little.",
   "You are going lower than your saved comfortable half-squat range. Make the next squat shallower and stop near the depth used during calibration.",
   "AI questions will be ready after camera setup is complete.",

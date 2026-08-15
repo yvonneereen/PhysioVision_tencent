@@ -427,18 +427,13 @@ assert.match(
 );
 assert.match(
   functionSource("announceExerciseInstruction", "setIntegratedCameraGuideActive"),
-  /Camera repetition counting is active now[\s\S]*?exerciseStartGuidance\(engine\.exercise\)[\s\S]*?exerciseTargetGuidance\(engine\.exercise\)[\s\S]*?movementTrackingPausedForInstruction = true[\s\S]*?movementTrackingPausedForInstruction = false/,
-  "the guide should announce active counting before the movement details and retain an explicit instruction state"
+  /exerciseTargetGuidance\(engine\.exercise\)[\s\S]*?After this instruction, say Hey Guide followed by your question whenever you need help\.[\s\S]*?exerciseStartGuidance\(engine\.exercise\)[\s\S]*?Begin now\.[\s\S]*?movementTrackingPausedForInstruction = true[\s\S]*?movementTrackingPausedForInstruction = false/,
+  "the browser guide should restore the August 9 target, help, movement, and start sequence"
 );
 assert.match(
   functionSource("announceExerciseInstruction", "setIntegratedCameraGuideActive"),
-  /handsFreeVoiceEnabled[\s\S]*?Say Hey Guide for help/,
-  "hands-free startup guidance should explain the Hey Guide wake phrase concisely"
-);
-assert.match(
-  functionSource("announceExerciseInstruction", "setIntegratedCameraGuideActive"),
-  /Hey Guide, I need a rest\./,
-  "hands-free startup guidance should teach the vocal rest command"
+  /handsFreeVoiceEnabled[\s\S]*?say Hey Guide followed by your question whenever you need help/,
+  "hands-free startup guidance should use the original Hey Guide introduction"
 );
 assert.doesNotMatch(
   markup,
