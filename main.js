@@ -392,6 +392,13 @@ const fallMonitor = new FallMonitor();
 let safetyCheckActive = false;
 let fallSafetyTimer = null;
 const FALL_SAFETY_COUNTDOWN_SECONDS = 60;
+const FALL_SAFETY_INITIAL_PROMPT =
+  "We noticed a possible fall and stopped the exercise. Are you okay? Tell me how you feel, or use one of the large buttons.";
+const FALL_SAFETY_NO_RESPONSE_ANNOUNCEMENT =
+  "We did not receive a response. The exercise and camera have stopped. "
+  + "Anyone nearby should check on you and call 995 if urgent. PhysioVision "
+  + "is checking whether your verified emergency contact can be alerted. "
+  + "It will not call 995 automatically.";
 let fallSafetySecondsRemaining = FALL_SAFETY_COUNTDOWN_SECONDS;
 let fallSafetyPreviousFocus = null;
 let activeFallEvent = null;
@@ -855,11 +862,14 @@ function showFallSafetyResult(response, event = {}) {
   }
   void submitFallEmergencyResponse(response);
 
-  speakMovementGuide(
-    `${fallSafetyResultTitle.textContent} ${fallSafetyResultMessage.textContent}` +
+  const resultAnnouncement = response === "no_response"
+    ? FALL_SAFETY_NO_RESPONSE_ANNOUNCEMENT
+    : `${fallSafetyResultTitle.textContent} ${fallSafetyResultMessage.textContent}` +
       (response === "okay"
         ? ""
-        : " PhysioVision is checking whether your verified emergency contact can be alerted. It will not call 995 automatically."),
+        : " PhysioVision is checking whether your verified emergency contact can be alerted. It will not call 995 automatically.");
+  speakMovementGuide(
+    resultAnnouncement,
     {
       key: `fall-safety-result:${response}`,
       interrupt: true,
@@ -1051,7 +1061,7 @@ function beginFallSafetyCheck(event) {
   fallSafetyOkay.focus({ preventScroll: true });
 
   const spoken = speakMovementGuide(
-    "We noticed a possible fall and stopped the exercise. Are you okay? Tell me how you feel, or use one of the large buttons.",
+    FALL_SAFETY_INITIAL_PROMPT,
     {
       key: "possible-fall-check",
       interrupt: true,
@@ -1407,7 +1417,8 @@ function speakMovementGuide(message, options = {}) {
   const {
     rate = MOVEMENT_GUIDE_RATE,
     pitch = MOVEMENT_GUIDE_PITCH,
-    allowGeneratedSpeech = true,
+    useGeminiVoice = false,
+    allowGeneratedSpeech = useGeminiVoice,
     cacheScope = "generic",
     onUnavailable = () => setMovementAiStatus(
       "error",
@@ -1415,15 +1426,16 @@ function speakMovementGuide(message, options = {}) {
     ),
     ...speechOptions
   } = options;
+  const shouldUseGemini = Boolean(useGeminiVoice);
   return voiceGuidance.speak(message, {
     ...speechOptions,
-    // Keep the guide on one Gemini voice: use prepared audio first, reuse a
-    // Gemini clip cached on this device second, and generate it live only when
-    // neither exists. Never switch the movement guide to a browser voice.
-    preferPrepared: true,
-    allowGeneratedSpeech,
+    // Fixed exercise, check-in and fall guidance uses the selected device
+    // voice. Only an unpredictable Hey Guide answer opts into Gemini TTS.
+    preferImmediate: !shouldUseGemini,
+    preferPrepared: shouldUseGemini,
+    allowGeneratedSpeech: shouldUseGemini && allowGeneratedSpeech,
     cacheScope,
-    textOnlyOnUnavailable: true,
+    textOnlyOnUnavailable: shouldUseGemini,
     onUnavailable,
     voiceGroup: MOVEMENT_GUIDE_VOICE_GROUP,
     volume: MOVEMENT_GUIDE_VOLUME,
@@ -1589,6 +1601,7 @@ function speakMovementAiMessage(
   const spoken = speakMovementGuide(message, {
     key: key || `movement-ai:${generation}:${Date.now()}`,
     interrupt: true,
+    useGeminiVoice: generated,
     allowGeneratedSpeech: generated,
     cacheScope: generated ? "personal" : "generic",
     onEnd: () => resumeMovementAiAfterSpeech(generation),
@@ -6114,7 +6127,6 @@ function continueAfterPainCheckin(completed) {
     {
       key: `camera-setup:countdown:${completed.context}`,
       interrupt: true,
-      allowGeneratedSpeech: true,
       voiceGroup: PAIN_PROMPT_VOICE_GROUP,
       rate: PAIN_PROMPT_RATE,
       pitch: PAIN_PROMPT_PITCH,
@@ -6295,9 +6307,8 @@ function speakPainPrompt(
   const spoken = speakMovementGuide(question, {
     key,
     interrupt: true,
-    // Keep the initial question and every follow-up on the same Gemini voice.
+    // Keep the initial question and every follow-up on one device voice.
     voiceGroup: PAIN_PROMPT_VOICE_GROUP,
-    allowGeneratedSpeech: true,
     rate: Number.isFinite(rate) ? rate : PAIN_PROMPT_RATE,
     pitch: Number.isFinite(pitch) ? pitch : PAIN_PROMPT_PITCH,
     onUnavailable: () => {

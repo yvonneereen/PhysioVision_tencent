@@ -1272,6 +1272,7 @@ export class VoiceGuidance {
       return true;
     }
 
+    this.reportGuidanceAudioSource("browser_speech", cacheScope);
     return this.speakBrowser(message, {
       onEnd,
       rate,

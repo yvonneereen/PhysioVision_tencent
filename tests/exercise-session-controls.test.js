@@ -402,12 +402,12 @@ assert.match(
 );
 assert.match(
   functionSource("speakMovementGuide", "localizedGuidanceParts"),
-  /allowGeneratedSpeech = true[\s\S]*?cacheScope = "generic"[\s\S]*?preferPrepared: true[\s\S]*?textOnlyOnUnavailable: true/,
-  "movement guidance should keep one Gemini voice and use text instead of browser speech when unavailable"
+  /useGeminiVoice = false[\s\S]*?allowGeneratedSpeech = useGeminiVoice[\s\S]*?preferImmediate: !shouldUseGemini[\s\S]*?preferPrepared: shouldUseGemini[\s\S]*?textOnlyOnUnavailable: shouldUseGemini/,
+  "fixed movement guidance should use browser speech while preserving an explicit Gemini route"
 );
 assert.match(
   functionSource("speakMovementAiMessage", "captureMovementAiQuestion"),
-  /allowGeneratedSpeech: generated[\s\S]*?cacheScope: generated \? "personal" : "generic"/,
+  /useGeminiVoice: generated[\s\S]*?allowGeneratedSpeech: generated[\s\S]*?cacheScope: generated \? "personal" : "generic"/,
   "only an unpredictable Hey Guide answer should opt into private live TTS"
 );
 assert.match(
@@ -774,8 +774,8 @@ const movementGuideSpeechSource = functionSource(
 );
 assert.match(
   movementGuideSpeechSource,
-  /allowGeneratedSpeech\s*=\s*true[\s\S]*?preferPrepared:\s*true[\s\S]*?allowGeneratedSpeech[\s\S]*?textOnlyOnUnavailable:\s*true[\s\S]*?voiceGroup:\s*MOVEMENT_GUIDE_VOICE_GROUP[\s\S]*?volume:\s*MOVEMENT_GUIDE_VOLUME/,
-  "live guidance should use prepared, cached, or live Gemini audio without switching to a browser voice"
+  /useGeminiVoice\s*=\s*false[\s\S]*?preferImmediate:\s*!shouldUseGemini[\s\S]*?preferPrepared:\s*shouldUseGemini[\s\S]*?allowGeneratedSpeech:\s*shouldUseGemini\s*&&\s*allowGeneratedSpeech[\s\S]*?voiceGroup:\s*MOVEMENT_GUIDE_VOICE_GROUP[\s\S]*?volume:\s*MOVEMENT_GUIDE_VOLUME/,
+  "fixed live guidance should use the browser voice and reserve Gemini for explicit AI answers"
 );
 assert.match(
   functionSource("speakCameraCoaching", "exerciseSpokenInstruction"),
@@ -784,8 +784,13 @@ assert.match(
 );
 assert.match(
   source,
-  /function speakPainPrompt[\s\S]*?speakMovementGuide\(question[\s\S]*?voiceGroup:\s*PAIN_PROMPT_VOICE_GROUP[\s\S]*?allowGeneratedSpeech:\s*true[\s\S]*?rate:[\s\S]*?pitch:/,
-  "pain prompts should retain the same Gemini voice when prepared audio is unavailable"
+  /function speakPainPrompt[\s\S]*?speakMovementGuide\(question[\s\S]*?voiceGroup:\s*PAIN_PROMPT_VOICE_GROUP[\s\S]*?rate:[\s\S]*?pitch:/,
+  "pain prompts should retain one grouped browser voice"
+);
+assert.doesNotMatch(
+  functionSource("speakPainPrompt", "showPainCheckin"),
+  /allowGeneratedSpeech:\s*true/,
+  "pain prompts must not spend Gemini TTS quota"
 );
 
 const calibrationFlowStart = source.indexOf(
@@ -1225,8 +1230,8 @@ assert.match(
 );
 assert.match(
   countdownSource,
-  /beginVisibleCountdown\(\);[\s\S]*?I heard pain level \$\{completed\.painLevel\} out of 10\.[\s\S]*?Camera setup is starting now\. Stay near your device\.[\s\S]*?allowGeneratedSpeech:\s*true/,
-  "the countdown should start immediately while repeating the heard score in the same Gemini utterance"
+  /beginVisibleCountdown\(\);[\s\S]*?I heard pain level \$\{completed\.painLevel\} out of 10\.[\s\S]*?Camera setup is starting now\. Stay near your device\.[\s\S]*?voiceGroup:\s*PAIN_PROMPT_VOICE_GROUP/,
+  "the countdown should start immediately while repeating the heard score in one device-voice utterance"
 );
 assert.doesNotMatch(
   countdownSource,
