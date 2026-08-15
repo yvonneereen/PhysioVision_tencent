@@ -1076,6 +1076,16 @@ assert.match(
   "automatic listening should only run when the user selected hands-free mode"
 );
 
+const startPainListeningSource = functionSource(
+  "startPainVoiceListening",
+  "speakPainPrompt"
+);
+assert.match(
+  startPainListeningSource,
+  /maxNoSpeechRetries:\s*expectedStage === "confirm-pain" \? 2 : 1[\s\S]*?retryDelayMs:\s*250[\s\S]*?interimSilenceMs:[\s\S]*?postResultSettleMs:\s*350/,
+  "pain confirmation should open promptly and retry transient Safari recognition failures"
+);
+
 assert.match(
   source,
   /painVoiceInputBtn\.addEventListener\("click",[\s\S]*?startPainVoiceListening/,

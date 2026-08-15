@@ -243,6 +243,9 @@ function renderStats(patients) {
   document.getElementById("stat-review-sub").textContent      = needReview > 0
     ? `${needReview} open escalation${needReview > 1 ? "s" : ""}`
     : "All clear";
+  document.getElementById("stat-need-review")
+    ?.parentElement
+    ?.classList.toggle("has-review", needReview > 0);
   document.getElementById("stat-adherence").textContent       = avgAdh !== null ? `${avgAdh}%` : "—";
   document.getElementById("stat-adherence-sub").textContent   = avgAdh !== null
     ? (avgAdh >= 80 ? "↑ On track" : "↓ Below target")

@@ -3,6 +3,11 @@ from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from api.catalogue.models import Calibration, Exercise
+from api.consultations.models import (
+    Escalation,
+    EscalationStatus,
+    EscalationTrigger,
+)
 from api.core.models import PatientProfile, User, UserRole
 
 from .models import Session
@@ -238,6 +243,27 @@ class PatientDataIsolationTests(APITestCase):
         self.assertEqual(after.status_code, 201)
         self.assertEqual(str(linked_before.data['session']), str(session.id))
         self.assertEqual(str(after.data['session']), str(session.id))
+
+    def test_high_pain_checkin_creates_open_clinician_review_flag(self):
+        self.client.force_authenticate(self.user_a)
+
+        response = self.client.post(
+            '/api/pain-checkins/',
+            {
+                'pain_level': 8,
+                'timing': 'before',
+                'checked_at': timezone.now().isoformat(),
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        escalation = Escalation.objects.get(
+            patient=self.patient_a,
+            trigger_type=EscalationTrigger.PAIN_INCREASE,
+            status=EscalationStatus.OPEN,
+        )
+        self.assertIn('8/10', escalation.description)
 
     def test_early_stop_reason_and_minimum_repetitions_are_persisted(self):
         self.client.force_authenticate(self.user_a)

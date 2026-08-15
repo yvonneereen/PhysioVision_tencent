@@ -6242,7 +6242,16 @@ function startPainVoiceListening({ expectedStage = null } = {}) {
 
   painVoiceFallbackNeeded = false;
   updatePainCheckinPresentation();
+  voiceCheckinStatusEl.textContent = translateText(
+    "Listening… Speak normally near your device."
+  );
   return voiceGuidance.listen({
+    maxNoSpeechRetries: expectedStage === "confirm-pain" ? 2 : 1,
+    retryDelayMs: 250,
+    interimSilenceMs: expectedStage === "confirm-pain" ? 250 : 350,
+    // The pain dialogue uses one locked browser voice. A short handoff is
+    // enough here and avoids a multi-second pause before the confirmation.
+    postResultSettleMs: 350,
     onStatus: (status) => {
       voiceCheckinStatusEl.textContent = status;
     },

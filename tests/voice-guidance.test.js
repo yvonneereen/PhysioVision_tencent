@@ -955,6 +955,23 @@ assert.equal(retryError, "");
 activeRecognitionInstance.emitResult("four");
 assert.equal(retryTranscript, "four");
 
+let transientRetryError = "";
+const instancesBeforeTransientRetry = recognitionInstances.length;
+listeningGuidance.listen({
+  retryDelayMs: 0,
+  onError: (message) => {
+    transientRetryError = message;
+  },
+});
+activeRecognitionInstance.emitError("network");
+await new Promise((resolve) => globalThis.setTimeout(resolve, 5));
+assert.equal(
+  recognitionInstances.length,
+  instancesBeforeTransientRetry + 2,
+  "a temporary Safari recognition interruption should start another listening attempt"
+);
+assert.equal(transientRetryError, "");
+
 let terminalListeningErrorCode = "";
 listeningGuidance.listen({
   maxNoSpeechRetries: 0,

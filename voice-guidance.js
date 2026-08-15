@@ -1577,6 +1577,7 @@ export class VoiceGuidance {
     maxNoSpeechRetries = 1,
     retryDelayMs = 350,
     interimSilenceMs = 0,
+    postResultSettleMs = MICROPHONE_RELEASE_SETTLE_MS,
   } = {}) {
     if (!this.canListen) {
       onError?.(
@@ -1676,7 +1677,9 @@ export class VoiceGuidance {
           // WebKit's `end` event means recognition has stopped, but its output
           // can remain ducked briefly. Do not let the next prompt start until
           // the device has returned to a stable playback session.
-          this.prepareSpeechAfterMicrophoneRelease().then(
+          this.prepareSpeechAfterMicrophoneRelease({
+            settleMs: postResultSettleMs,
+          }).then(
             finishDelivery,
             finishDelivery
           );
@@ -1789,6 +1792,13 @@ export class VoiceGuidance {
           retryOrFail(
             "I could not hear an answer. Please try again or use the buttons.",
             "no-speech"
+          );
+          return;
+        }
+        if (["aborted", "network"].includes(event.error)) {
+          retryOrFail(
+            "Speech recognition was interrupted. Listening again now.",
+            event.error
           );
           return;
         }

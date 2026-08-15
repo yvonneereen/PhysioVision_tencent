@@ -8268,6 +8268,17 @@ details.metrics summary {
   background: var(--white);
 }
 
+.clinician-stats > div.has-review {
+  border-color: var(--coral);
+  background: #fff2ed;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--coral) 14%, transparent);
+}
+
+.clinician-stats > div.has-review strong,
+.clinician-stats > div.has-review em {
+  color: var(--coral-dark);
+}
+
 .clinician-stats span,
 .clinician-stats strong,
 .clinician-stats em {

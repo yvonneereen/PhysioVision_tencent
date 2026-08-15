@@ -25,9 +25,14 @@ class SessionsConfig(AppConfig):
             on_session_saved,
             sender=Session,
             dispatch_uid='escalation_check_on_session',
+            # These receivers are defined inside ready(), so the signal must
+            # retain a strong reference to them. Otherwise Python can collect
+            # them after startup and no clinician review flag is created.
+            weak=False,
         )
         post_save.connect(
             on_paincheckin_saved,
             sender=PainCheckin,
             dispatch_uid='escalation_check_on_paincheckin',
+            weak=False,
         )
