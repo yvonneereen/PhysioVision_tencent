@@ -56,6 +56,9 @@ const DEFAULTS = Object.freeze({
   historyWindowMs: 1000,
   candidateHoldMs: 5000,
   visibilityLossCandidateHoldMs: 2500,
+  partialDescentRecencyMs: 1400,
+  partialShoulderDropRatio: 0.32,
+  partialShoulderFloorGapRatio: 0.48,
   lostVisibilityMs: 1200,
   rapidDescentRatio: 0.18,
   torsoChangeDegrees: 38,
@@ -159,8 +162,8 @@ export function summarizeFallPose(landmarks, minimumVisibility = 0.55) {
   // A side-on or collapsing person often occludes one half of their body.
   // Requiring both landmarks in every pair made the safety monitor stop at the
   // exact moment it was most needed. One visible side is enough to keep a
-  // conservative body summary; the stricter warm-up below still requires a
-  // visible head and a stable upright baseline.
+  // conservative body summary; the warm-up below still requires a stable,
+  // upright torso baseline.
   const noseLandmark = landmarks[LANDMARKS.NOSE];
   const nose = finitePoint(noseLandmark, minimumVisibility)
     ? { x: noseLandmark.x, y: noseLandmark.y }
@@ -186,7 +189,10 @@ export function summarizeFallPose(landmarks, minimumVisibility = 0.55) {
   ].filter((point) => finitePoint(point, minimumVisibility));
   const ankles = visibleCentre(visibleAnkles, minimumVisibility);
 
-  if (!shoulders || !hips || !ankles) return null;
+  // Feet are frequently just outside a phone's portrait crop. Torso tracking
+  // is still sufficient to establish an upright baseline; use the image's
+  // lower edge as a conservative floor estimate until an ankle is visible.
+  if (!shoulders || !hips) return null;
 
   return {
     nose,
@@ -194,8 +200,35 @@ export function summarizeFallPose(landmarks, minimumVisibility = 0.55) {
     hips,
     knees,
     ankles,
-    floorY: Math.max(...visibleAnkles.map((point) => point.y)),
+    floorY: visibleAnkles.length
+      ? Math.max(...visibleAnkles.map((point) => point.y))
+      : 1,
     torsoAngle: torsoAngleFromVertical(shoulders, hips),
+  };
+}
+
+function summarizePartialFallFragment(landmarks, minimumVisibility) {
+  if (!Array.isArray(landmarks)) return null;
+  const shoulderPoints = [
+    landmarks[LANDMARKS.LEFT_SHOULDER],
+    landmarks[LANDMARKS.RIGHT_SHOULDER],
+  ].filter((point) => finitePoint(point, minimumVisibility));
+  if (!shoulderPoints.length) return null;
+
+  const supportingPoints = [
+    landmarks[LANDMARKS.NOSE],
+    landmarks[7],
+    landmarks[8],
+    ...shoulderPoints,
+    landmarks[13],
+    landmarks[14],
+    landmarks[LANDMARKS.LEFT_HIP],
+    landmarks[LANDMARKS.RIGHT_HIP],
+  ].filter((point) => finitePoint(point, minimumVisibility));
+  if (supportingPoints.length < 2) return null;
+
+  return {
+    shoulders: visibleCentre(shoulderPoints, minimumVisibility),
   };
 }
 
@@ -396,8 +429,14 @@ export class FallMonitor {
       );
       partialVisibility = Boolean(pose);
     }
-    if (!pose) return this.notePoseUnavailable(timestampMs);
+    if (!pose) {
+      if (!this.candidate) {
+        this.#startCandidateFromPartialPose(landmarks, timestampMs);
+      }
+      return this.notePoseUnavailable(timestampMs);
+    }
 
+    const previousVisibleAt = this.lastVisibleAt;
     this.lastVisibleAt = timestampMs;
     if (!this.baseline) {
       return this.#warmUp(pose, timestampMs);
@@ -436,16 +475,25 @@ export class FallMonitor {
       };
     }
 
+    if (
+      this.#startCandidateFromPartialPose(
+        landmarks,
+        timestampMs,
+        previousVisibleAt
+      )
+    ) {
+      return {
+        type: "candidate",
+        mode: this.mode,
+        signals: this.candidate.signals,
+      };
+    }
+
     return { type: "monitoring", mode: this.mode };
   }
 
   #warmUp(pose, timestampMs) {
     if (this.warmupStartedAt === null) this.warmupStartedAt = timestampMs;
-    if (!pose.nose) {
-      this.warmupStartedAt = timestampMs;
-      this.warmupFrames = [];
-      return { type: "position_for_baseline", mode: this.mode };
-    }
     const plausibleStart = this.mode === FALL_MONITORING_MODES.SEATED
       ? pose.torsoAngle < 42
       : pose.torsoAngle < 32;
@@ -465,18 +513,70 @@ export class FallMonitor {
     }
 
     const floorY = average(this.warmupFrames.map((frame) => frame.floorY));
-    const noseY = average(this.warmupFrames.map((frame) => frame.nose.y));
+    const shoulderY = average(
+      this.warmupFrames.map((frame) => frame.shoulders.y)
+    );
+    const visibleNoseYs = this.warmupFrames
+      .map((frame) => frame.nose?.y)
+      .filter(Number.isFinite);
+    const topY = visibleNoseYs.length >= this.warmupFrames.length / 2
+      ? average(visibleNoseYs)
+      : shoulderY;
     this.baseline = {
       floorY,
       hipY: average(this.warmupFrames.map((frame) => frame.hips.y)),
+      shoulderY,
       torsoAngle: average(
         this.warmupFrames.map((frame) => frame.torsoAngle)
       ),
-      personHeight: Math.max(floorY - noseY, 0.12),
+      personHeight: Math.max(floorY - topY, 0.12),
     };
     this.history = [{ ...pose, timestampMs }];
     this.previousPose = pose;
     return { type: "ready", mode: this.mode };
+  }
+
+  #startCandidateFromPartialPose(
+    landmarks,
+    timestampMs,
+    previousVisibleAt = this.lastVisibleAt
+  ) {
+    if (!this.baseline || previousVisibleAt === null) return false;
+    if (
+      timestampMs - previousVisibleAt > this.options.partialDescentRecencyMs
+    ) {
+      return false;
+    }
+    const fragment = summarizePartialFallFragment(
+      landmarks,
+      this.options.partialMinimumVisibility
+    );
+    if (!fragment) return false;
+
+    const height = Math.max(this.baseline.personHeight, 0.12);
+    const shoulderDrop =
+      (fragment.shoulders.y - this.baseline.shoulderY) / height;
+    const shoulderFloorGap =
+      (this.baseline.floorY - fragment.shoulders.y) / height;
+    if (
+      shoulderDrop < this.options.partialShoulderDropRatio
+      || shoulderFloorGap > this.options.partialShoulderFloorGapRatio
+    ) {
+      return false;
+    }
+
+    this.candidate = {
+      startedAt: timestampMs,
+      stillSince: null,
+      visibilityLostAt: null,
+      signals: [
+        "large_downward_position_change",
+        "upper_body_near_floor",
+        "partial_pose_during_descent",
+      ],
+    };
+    this.lastVisibleAt = timestampMs;
+    return true;
   }
 
   #fallSignals(earlier, pose, height) {

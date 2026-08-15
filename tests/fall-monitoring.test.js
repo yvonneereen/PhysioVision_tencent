@@ -158,6 +158,103 @@ assert.equal(
   const monitor = new FallMonitor({
     warmupMs: 300,
     minimumWarmupFrames: 4,
+  });
+  monitor.configure("half-squats");
+  const croppedStandingPose = pose();
+  [0, 7, 8, 27, 28].forEach((index) => {
+    croppedStandingPose[index] = {
+      ...croppedStandingPose[index],
+      visibility: 0.1,
+    };
+  });
+  let event;
+  for (const timestampMs of [0, 100, 200, 300]) {
+    event = monitor.update({
+      landmarks: croppedStandingPose,
+      timestampMs,
+    });
+  }
+  assert.equal(event.type, "ready");
+  assert.ok(monitor.baseline);
+}
+
+{
+  const monitor = new FallMonitor({
+    warmupMs: 300,
+    minimumWarmupFrames: 4,
+    visibilityLossCandidateHoldMs: 600,
+  });
+  monitor.configure("half-squats");
+  for (const timestampMs of [0, 100, 200, 300]) {
+    monitor.update({ landmarks: pose(), timestampMs });
+  }
+  const collapsedFragment = Array.from(
+    { length: 33 },
+    () => point(0.5, 0.5, 0.05)
+  );
+  collapsedFragment[11] = point(0.42, 0.84, 0.9);
+  collapsedFragment[13] = point(0.48, 0.88, 0.9);
+  const candidate = monitor.update({
+    landmarks: collapsedFragment,
+    timestampMs: 500,
+  });
+  assert.equal(candidate.type, "candidate");
+  assert.ok(candidate.signals.includes("upper_body_near_floor"));
+  assert.equal(monitor.notePoseUnavailable(1100).type, "possible_fall");
+}
+
+{
+  const monitor = new FallMonitor({
+    warmupMs: 300,
+    minimumWarmupFrames: 4,
+    visibilityLossCandidateHoldMs: 600,
+  });
+  monitor.configure("half-squats");
+  for (const timestampMs of [0, 100, 200, 300]) {
+    monitor.update({ landmarks: pose(), timestampMs });
+  }
+  const verticallyCollapsedPose = Array.from(
+    { length: 33 },
+    () => point(0.5, 0.5, 0.05)
+  );
+  verticallyCollapsedPose[11] = point(0.42, 0.82, 0.9);
+  verticallyCollapsedPose[13] = point(0.46, 0.87, 0.9);
+  verticallyCollapsedPose[23] = point(0.43, 0.86, 0.35);
+  const candidate = monitor.update({
+    landmarks: verticallyCollapsedPose,
+    timestampMs: 500,
+  });
+  assert.equal(candidate.type, "candidate");
+  assert.ok(candidate.signals.includes("partial_pose_during_descent"));
+}
+
+{
+  const monitor = new FallMonitor({
+    warmupMs: 300,
+    minimumWarmupFrames: 4,
+    visibilityLossCandidateHoldMs: 200,
+  });
+  monitor.configure("half-squats");
+  for (const timestampMs of [0, 100, 200, 300]) {
+    monitor.update({ landmarks: pose(), timestampMs });
+  }
+  const uprightFragment = Array.from(
+    { length: 33 },
+    () => point(0.5, 0.5, 0.05)
+  );
+  uprightFragment[11] = point(0.42, 0.32, 0.9);
+  uprightFragment[13] = point(0.48, 0.4, 0.9);
+  assert.notEqual(
+    monitor.update({ landmarks: uprightFragment, timestampMs: 500 }).type,
+    "candidate"
+  );
+  assert.notEqual(monitor.notePoseUnavailable(900).type, "possible_fall");
+}
+
+{
+  const monitor = new FallMonitor({
+    warmupMs: 300,
+    minimumWarmupFrames: 4,
     visibilityLossCandidateHoldMs: 200,
   });
   monitor.configure("half-squats");

@@ -74,7 +74,7 @@ import {
   fallMonitoringReadiness,
   parseWellbeingClarificationResponse,
   parseWellbeingResponse,
-} from "./fall-monitoring.js?v=5";
+} from "./fall-monitoring.js?v=6";
 import {
   minimumRepetitionsPerSet,
   painBaselineForNextExercise,
