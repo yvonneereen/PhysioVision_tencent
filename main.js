@@ -74,7 +74,7 @@ import {
   fallMonitoringReadiness,
   parseWellbeingClarificationResponse,
   parseWellbeingResponse,
-} from "./fall-monitoring.js?v=4";
+} from "./fall-monitoring.js?v=5";
 import {
   minimumRepetitionsPerSet,
   painBaselineForNextExercise,
@@ -619,18 +619,24 @@ function loadActivePrescriptions() {
 
 function renderFallReadiness(exercise = engine?.exercise) {
   const readiness = fallMonitoringReadiness(exercise);
-  fallReadinessEl.dataset.state = readiness.state;
-  fallReadinessTitleEl.textContent = readiness.title;
-  fallReadinessDetailEl.textContent = (
+  const contactAlertUnavailable = (
     readiness.state === "ready" && !profile.emergencyContactAlertsReady
-      ? "The camera check is available. Verify an emergency contact in My profile before automatic alerts can be sent."
-      : readiness.detail
   );
+  const effectiveState = contactAlertUnavailable ? "limited" : readiness.state;
+  fallReadinessEl.dataset.state = effectiveState;
+  fallReadinessTitleEl.textContent = contactAlertUnavailable
+    ? "Fall check ready · emergency contact calls off"
+    : readiness.state === "ready"
+      ? "Fall check and verified-contact alert ready"
+      : readiness.title;
+  fallReadinessDetailEl.textContent = contactAlertUnavailable
+    ? "The camera will ask if you are okay after a possible fall. Verify your emergency contact in My profile to enable automatic calls after no response or a request for help."
+    : readiness.detail;
   const icon = fallReadinessEl.querySelector(".fall-readiness-icon");
   if (icon) {
-    icon.textContent = readiness.state === "ready"
+    icon.textContent = effectiveState === "ready"
       ? "✓"
-      : readiness.state === "limited"
+      : effectiveState === "limited"
         ? "!"
         : "—";
   }
@@ -3725,6 +3731,7 @@ function renderFrame() {
             statusEl.textContent = "Personal calibration in progress";
           } else if (movementTrackingPausedForInstruction) {
             presentInstructionTrackingPause(angles, frameTimestamp);
+            processFallMonitoring(landmarks, frameTimestamp);
           } else if (pendingSetStartCheck) {
             updateSetStartingPositionCheck(angles, frameTimestamp);
             processFallMonitoring(landmarks, frameTimestamp);
@@ -3751,31 +3758,42 @@ function renderFrame() {
             engine.update({}, frameTimestamp);
           }
           const fallEvent = fallMonitor.notePoseUnavailable(frameTimestamp);
-          combinedPoseHistory = [];
-          updateCalibrationCapture(null, frameTimestamp);
-          updateSetStartingPositionCheck(null, frameTimestamp);
-          const interruptedHold = engine.inHold;
-          if (holdInterval) {
-            clearHoldTimer(activeDose(engine.exercise).holdSeconds);
+          if (
+            !safetyCheckActive
+            && !calibrationSession
+            && !handPreviewMode
+            && fallEvent.type === "possible_fall"
+            && !fallEvent.repeated
+          ) {
+            beginFallSafetyCheck(fallEvent);
           }
-          statusEl.textContent = fallEvent.type === "visibility_lost"
-            ? "Movement paused — I can’t see you. Return to the marked area"
-            : "Movement paused — step back so your full body is visible";
-          setFeedbackBanner(
-            "visibility",
-            interruptedHold
-              ? "Pause your movement. Your hold was reset because the required joints were no longer visible. Reposition, then restart the hold."
-              : "Pause your movement. Step back until your full body and required joints are visible."
-          );
-          queueSpokenMovementCue(
-            "visibility",
-            interruptedHold
-              ? "Pause your movement. Your hold was reset because tracking was lost. Reposition until your full body is visible, then restart the hold."
-              : fallEvent.type === "visibility_lost"
-                ? "Pause your movement. I can’t see you. Please return to the marked area."
-                : "Pause your movement. Step back and keep your full body and required joints visible.",
-            frameTimestamp
-          );
+          combinedPoseHistory = [];
+          if (!safetyCheckActive) {
+            updateCalibrationCapture(null, frameTimestamp);
+            updateSetStartingPositionCheck(null, frameTimestamp);
+            const interruptedHold = engine.inHold;
+            if (holdInterval) {
+              clearHoldTimer(activeDose(engine.exercise).holdSeconds);
+            }
+            statusEl.textContent = fallEvent.type === "visibility_lost"
+              ? "Movement paused — I can’t see you. Return to the marked area"
+              : "Movement paused — step back so your full body is visible";
+            setFeedbackBanner(
+              "visibility",
+              interruptedHold
+                ? "Pause your movement. Your hold was reset because the required joints were no longer visible. Reposition, then restart the hold."
+                : "Pause your movement. Step back until your full body and required joints are visible."
+            );
+            queueSpokenMovementCue(
+              "visibility",
+              interruptedHold
+                ? "Pause your movement. Your hold was reset because tracking was lost. Reposition until your full body is visible, then restart the hold."
+                : fallEvent.type === "visibility_lost"
+                  ? "Pause your movement. I can’t see you. Please return to the marked area."
+                  : "Pause your movement. Step back and keep your full body and required joints visible.",
+              frameTimestamp
+            );
+          }
         }
       }
     }

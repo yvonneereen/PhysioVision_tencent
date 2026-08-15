@@ -109,6 +109,70 @@ assert.equal(
 }
 
 {
+  const monitor = new FallMonitor({
+    warmupMs: 300,
+    minimumWarmupFrames: 4,
+    candidateHoldMs: 5000,
+    visibilityLossCandidateHoldMs: 600,
+  });
+  monitor.configure("half-squats");
+  for (const timestampMs of [0, 100, 200, 300]) {
+    monitor.update({ landmarks: pose(), timestampMs });
+  }
+  assert.equal(
+    monitor.update({ landmarks: lyingPose, timestampMs: 500 }).type,
+    "candidate"
+  );
+  assert.equal(monitor.notePoseUnavailable(700).type, "candidate");
+  const event = monitor.notePoseUnavailable(1300);
+  assert.equal(event.type, "possible_fall");
+  assert.ok(event.signals.includes("pose_lost_after_fall_signals"));
+}
+
+{
+  const monitor = new FallMonitor({
+    warmupMs: 300,
+    minimumWarmupFrames: 4,
+    candidateHoldMs: 5000,
+    visibilityLossCandidateHoldMs: 600,
+  });
+  monitor.configure("half-squats");
+  for (const timestampMs of [0, 100, 200, 300]) {
+    monitor.update({ landmarks: pose(), timestampMs });
+  }
+  const partiallyVisibleFall = lyingPose.map((landmark) => ({
+    ...landmark,
+    visibility: 0.35,
+  }));
+  const candidate = monitor.update({
+    landmarks: partiallyVisibleFall,
+    timestampMs: 500,
+  });
+  assert.equal(candidate.type, "candidate");
+  assert.ok(candidate.signals.includes("limited_pose_visibility"));
+  monitor.notePoseUnavailable(700);
+  assert.equal(monitor.notePoseUnavailable(1300).type, "possible_fall");
+}
+
+{
+  const monitor = new FallMonitor({
+    warmupMs: 300,
+    minimumWarmupFrames: 4,
+    visibilityLossCandidateHoldMs: 200,
+  });
+  monitor.configure("half-squats");
+  for (const timestampMs of [0, 100, 200, 300]) {
+    monitor.update({ landmarks: pose(), timestampMs });
+  }
+  for (const timestampMs of [500, 900, 1400, 2200]) {
+    assert.notEqual(
+      monitor.notePoseUnavailable(timestampMs).type,
+      "possible_fall"
+    );
+  }
+}
+
+{
   const monitor = warmedMonitor();
   for (const timestampMs of [500, 1000, 1800, 2600, 4000, 6000]) {
     const event = monitor.notePoseUnavailable(timestampMs);

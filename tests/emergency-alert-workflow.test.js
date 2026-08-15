@@ -19,6 +19,8 @@ assert.match(ui, /confirmEmergencyContactVerification\(code\)/);
 assert.match(ui, /code spoken during the verification call/);
 assert.match(main, /request an automated call/);
 assert.doesNotMatch(main, /call and text/i);
+assert.match(main, /Fall check ready · emergency contact calls off/);
+assert.match(main, /Verify your emergency contact in My profile/);
 assert.match(api, /export async function createEmergencyAlert/);
 assert.match(api, /export async function respondEmergencyAlert/);
 
@@ -33,6 +35,16 @@ assert.match(main, /It will not call 995 automatically/);
 assert.match(main, /FALL_SAFETY_COUNTDOWN_SECONDS = 60/);
 assert.match(main, /fallSafetySecondsRemaining === 30/);
 assert.match(main, /Thirty seconds left to answer/);
+assert.match(
+  main,
+  /fallMonitor\.notePoseUnavailable\(frameTimestamp\)[\s\S]*fallEvent\.type === "possible_fall"[\s\S]*beginFallSafetyCheck\(fallEvent\)/,
+  "a fall candidate that disappears from view must still open the safety check"
+);
+assert.match(
+  main,
+  /presentInstructionTrackingPause\(angles, frameTimestamp\);\s*processFallMonitoring\(landmarks, frameTimestamp\);/,
+  "fall monitoring must stay active while the opening movement instruction plays"
+);
 assert.match(main, /response === "confirm-okay"/);
 assert.match(main, /requestFallSafetyOkayClarification\(\)/);
 assert.match(main, /requestFallSafetyUnknownClarification\(transcript\)/);
