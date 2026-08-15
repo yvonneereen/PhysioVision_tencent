@@ -44,7 +44,7 @@ services:
       - key: VONAGE_PRIVATE_KEY
         sync: false
       - key: VONAGE_FROM_NUMBER
-        value: "123456789"
+        value: "12345678901"
       - key: VONAGE_DEMO_MODE
         value: "True"
       - key: VONAGE_DEMO_TO_NUMBER

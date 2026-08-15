@@ -35,10 +35,12 @@ This creates the contact-verification and durable emergency-alert records.
 ### 2. Create a Vonage Voice application
 
 In the Vonage dashboard, create a Voice application and generate a public and
-private key pair. Keep the application ID and downloaded private key. A Vonage
-demo account can use `123456789` as its caller ID and call the phone number
-verified for that demo account. This is an actual phone call, but it is limited
-by Vonage's trial credit and demo-recipient restrictions.
+private key pair. Keep the application ID and downloaded private key. For a
+demo account, open Vonage's **Try the Voice API** page and copy the exact
+read-only **From** value displayed for the working test request. For the current
+demo account that value is `12345678901`; do not shorten it to a generic test
+value. The demo can call only the phone number registered to that account and
+is limited by its trial credit and recipient restrictions.
 
 Do **not** configure 995, 999, 112, or 911 as the saved contact. The code blocks
 those short emergency-service numbers.
@@ -50,7 +52,7 @@ Pages:
 EMERGENCY_ALERT_PROVIDER=vonage
 VONAGE_APPLICATION_ID=your-vonage-application-id
 VONAGE_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----
-VONAGE_FROM_NUMBER=123456789
+VONAGE_FROM_NUMBER=12345678901
 VONAGE_DEMO_MODE=True
 VONAGE_DEMO_TO_NUMBER=+6580380208
 EMERGENCY_ALERT_DELAY_SECONDS=60
@@ -63,11 +65,11 @@ Replace the example recipient with the phone number verified in your Vonage
 account. `VONAGE_DEMO_TO_NUMBER` is an allowlist: contact verification and fall
 calls will be rejected if the saved contact has a different number.
 
-With `VONAGE_DEMO_MODE=True`, the backend always uses Vonage's documented
-`123456789` trial caller ID, even if `VONAGE_FROM_NUMBER` was entered
-incorrectly in the hosting dashboard. A paid deployment using a rented Vonage
-number must set `VONAGE_DEMO_MODE=False` and set `VONAGE_FROM_NUMBER` to that
-rented number.
+With `VONAGE_DEMO_MODE=True`, the backend uses the normalized value of
+`VONAGE_FROM_NUMBER` and restricts calls to `VONAGE_DEMO_TO_NUMBER`. Copy the
+caller ID exactly from the successful request shown in Vonage's dashboard.
+A paid deployment using a rented Vonage number must set
+`VONAGE_DEMO_MODE=False` and set `VONAGE_FROM_NUMBER` to that rented number.
 
 In Render, add the complete contents of the downloaded `.key` file as the
 `VONAGE_PRIVATE_KEY` secret. It may be a multiline value. Never expose the

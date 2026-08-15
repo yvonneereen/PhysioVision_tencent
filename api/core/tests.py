@@ -220,7 +220,7 @@ class ProductionReadinessTests(APITestCase):
         EMERGENCY_ALERT_PROVIDER='vonage',
         VONAGE_APPLICATION_ID='test-application-id',
         VONAGE_PRIVATE_KEY='test-private-key',
-        VONAGE_FROM_NUMBER='123456789',
+        VONAGE_FROM_NUMBER='12345678901',
         VONAGE_DEMO_TO_NUMBER='+65 9123 4567',
     )
     @patch('api.core.emergency_alerts.secrets.randbelow', return_value=123456)
@@ -289,7 +289,7 @@ class ProductionReadinessTests(APITestCase):
         EMERGENCY_ALERT_PROVIDER='vonage',
         VONAGE_APPLICATION_ID='test-application-id',
         VONAGE_PRIVATE_KEY='test-private-key',
-        VONAGE_FROM_NUMBER='123456789',
+        VONAGE_FROM_NUMBER='12345678901',
         VONAGE_DEMO_TO_NUMBER='+65 9123 4567',
         EMERGENCY_ALERT_DELAY_SECONDS=60,
     )
@@ -380,7 +380,7 @@ class ProductionReadinessTests(APITestCase):
         EMERGENCY_ALERT_PROVIDER='vonage',
         VONAGE_APPLICATION_ID='test-application-id',
         VONAGE_PRIVATE_KEY='test-private-key',
-        VONAGE_FROM_NUMBER='123456789',
+        VONAGE_FROM_NUMBER='12345678901',
         VONAGE_DEMO_TO_NUMBER='+65 9123 4567',
     )
     @patch('api.core.emergency_alerts.deliver_emergency_notification')
@@ -459,7 +459,7 @@ class ProductionReadinessTests(APITestCase):
         )
         payload = json.loads(request.data.decode('utf-8'))
         self.assertEqual(payload['to'][0]['number'], '6591234567')
-        self.assertEqual(payload['from']['number'], '123456789')
+        self.assertEqual(payload['from']['number'], '12345678901')
         self.assertEqual(
             payload['ncco'],
             [{
@@ -473,7 +473,7 @@ class ProductionReadinessTests(APITestCase):
         EMERGENCY_ALERT_PROVIDER='vonage',
         VONAGE_APPLICATION_ID='test-application-id',
         VONAGE_PRIVATE_KEY='test-private-key',
-        VONAGE_FROM_NUMBER='123456789',
+        VONAGE_FROM_NUMBER='12345678901',
         VONAGE_DEMO_TO_NUMBER='+65 9123 4567',
     )
     @patch(
@@ -508,7 +508,7 @@ class ProductionReadinessTests(APITestCase):
         EMERGENCY_ALERT_PROVIDER='vonage',
         VONAGE_APPLICATION_ID='test-application-id',
         VONAGE_PRIVATE_KEY='test-private-key',
-        VONAGE_FROM_NUMBER='123456789',
+        VONAGE_FROM_NUMBER='12345678901',
         VONAGE_DEMO_TO_NUMBER='+65 9123 4567',
     )
     def test_vonage_demo_rejects_a_different_recipient(self):

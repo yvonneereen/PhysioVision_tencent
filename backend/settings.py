@@ -270,10 +270,9 @@ EMERGENCY_ALERT_PROVIDER = env(
 VONAGE_APPLICATION_ID = env('VONAGE_APPLICATION_ID', default='')
 VONAGE_PRIVATE_KEY = env('VONAGE_PRIVATE_KEY', default='')
 VONAGE_FROM_NUMBER = env('VONAGE_FROM_NUMBER', default='')
-# The prototype uses Vonage's documented trial caller ID. Keeping this
-# explicit prevents a placeholder-like number from being accepted initially
-# and rejected later in the provider call lifecycle. Paid deployments with a
-# rented Vonage number must set this to False.
+# Demo mode restricts delivery to the configured trial recipient. The caller
+# ID still comes from VONAGE_FROM_NUMBER because Vonage's dashboard can assign
+# an account-specific test value.
 VONAGE_DEMO_MODE = env.bool('VONAGE_DEMO_MODE', default=True)
 # Free Vonage demo accounts may call only a verified number. This allowlist is
 # also a safety control: emergency alerts cannot be redirected to another phone.

@@ -27,8 +27,6 @@ from .models import (
 
 logger = logging.getLogger(__name__)
 
-VONAGE_DEMO_CALLER_ID = "123456789"
-
 
 VONAGE_CALL_STATUSES = frozenset({
     "started",
@@ -64,10 +62,7 @@ def emergency_provider_ready():
         settings.EMERGENCY_ALERT_PROVIDER == "vonage"
         and bool(settings.VONAGE_APPLICATION_ID)
         and bool(settings.VONAGE_PRIVATE_KEY)
-        and (
-            settings.VONAGE_DEMO_MODE
-            or bool(settings.VONAGE_FROM_NUMBER)
-        )
+        and bool(settings.VONAGE_FROM_NUMBER)
         and bool(settings.VONAGE_DEMO_TO_NUMBER)
     )
 
@@ -89,8 +84,6 @@ def normalize_outbound_phone(phone):
 
 
 def vonage_caller_number():
-    if settings.VONAGE_DEMO_MODE:
-        return VONAGE_DEMO_CALLER_ID
     return normalize_outbound_phone(settings.VONAGE_FROM_NUMBER)
 
 
