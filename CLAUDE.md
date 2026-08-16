@@ -9,7 +9,7 @@ Built for a hackathon. Stack: vanilla JS frontend + Django REST backend.
 
 ```bash
 # 1. Clone
-git clone https://github.com/yvonneereen/PhysioVision.git
+git clone https://github.com/yvonneereen/PhysioVision_tencent.git
 cd PhysioVision
 
 # 2. Environment — copy the example and fill in your own secret key
