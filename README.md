@@ -107,88 +107,9 @@ Account tokens are kept in per-tab `sessionStorage`, cleared at sign-out and not
 persisted to `localStorage`. Database, email, Gemini, Slack and Vonage secrets
 belong only in the backend environment.
 
-## Run locally
+## Open PhysioVision
 
-### 1. Start the Django API
-
-```bash
-cp .env.example .env
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
-python manage.py migrate
-python manage.py seed_exercises
-python manage.py runserver
-```
-
-The example environment uses SQLite and permits the local frontend origin. Email,
-Gemini, Slack and Vonage features require their corresponding credentials, but
-the core local pages and camera-tracking guide do not require all integrations.
-
-### 2. Start the frontend
-
-In a second terminal:
-
-```bash
-python3 -m http.server 4173
-```
-
-Open `http://localhost:4173`. Camera access requires a web server rather than
-opening `index.html` directly. The MediaPipe models and web fonts load from
-external CDNs, so the complete guide also needs an internet connection.
-
-### 3. Run the automated checks
-
-```bash
-npm test
-```
-
-The suite covers tracking geometry, repetition state, calibration, session
-continuity, voice guidance, localisation, fall alerts, authentication, wellness
-planning and clinician workflows.
-
-## Production deployment
-
-### Frontend: Tencent Cloud EdgeOne Pages
-
-Connect the repository and use:
-
-```text
-Production branch: main
-Build command: npm run build
-Build output directory: dist
-PHYSIOVISION_API_BASE=https://physiovision.onrender.com/api
-```
-
-`scripts/build-static.mjs` copies the browser application into `dist/`, verifies
-local ES-module imports and writes the public API base into the built
-`runtime-config.js`. Do not place private keys or API secrets in EdgeOne.
-
-### Backend: Render
-
-`render.yaml`, `build.sh` and `gunicorn.conf.py` define the Django web service.
-The build installs dependencies, collects static files, applies migrations and
-seeds the exercise catalogue. Configure a persistent `DATABASE_URL` and use the
-exact EdgeOne origin, without a trailing slash, for:
-
-```text
-CORS_ALLOWED_ORIGINS=https://physiovision.edgeone.dev
-CSRF_TRUSTED_ORIGINS=https://physiovision.edgeone.dev
-FRONTEND_URL=https://physiovision.edgeone.dev
-```
-
-Copy `.env.example` values into Render as private environment variables where
-required. At minimum, production accounts need the Django and database values;
-email verification needs Gmail API credentials; AI features need
-`GEMINI_API_KEY`; Slack and emergency-contact calls need their respective bot
-and Vonage credentials.
-
-The no-response fall-alert path additionally requires a continuously running
-worker connected to the same database:
-
-```bash
-python manage.py process_emergency_alerts --watch --interval 2
-```
+Use the deployed website at **[https://physiovision.edgeone.dev](https://physiovision.edgeone.dev)**.
 
 ## Prototype boundaries
 
